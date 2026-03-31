@@ -430,7 +430,7 @@ let soundMuted=false, musicPlaying=false, musicOsc=null, musicTimer=null;
 function initAudio(){
   if(audioCtx)return;
   audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-  masterGain=audioCtx.createGain(); masterGain.gain.value=0.4; masterGain.connect(audioCtx.destination);
+  masterGain=audioCtx.createGain(); masterGain.gain.setValueAtTime(0,audioCtx.currentTime); masterGain.gain.linearRampToValueAtTime(0.4,audioCtx.currentTime+0.15); masterGain.connect(audioCtx.destination);
   sfxGain=audioCtx.createGain(); sfxGain.gain.value=0.5; sfxGain.connect(masterGain);
   musicGain=audioCtx.createGain(); musicGain.gain.value=0.18; musicGain.connect(masterGain);
 }
