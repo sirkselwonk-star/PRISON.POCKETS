@@ -4483,13 +4483,17 @@ function loop(now){
   var elapsed=now-_lastLoopTime;
   _lastLoopTime=now;
   // Cap to avoid spiral of death (e.g. tab was backgrounded)
-  if(elapsed>100)elapsed=100;
+  if(elapsed>200)elapsed=200;
   _accumulator+=elapsed;
-  // Run enough ticks to catch up to 60fps
-  while(_accumulator>=_TICK_MS){
+  // Run enough ticks to catch up to 60fps (max 8 per frame)
+  var ticks=0;
+  while(_accumulator>=_TICK_MS&&ticks<8){
     tick();
     _accumulator-=_TICK_MS;
+    ticks++;
   }
+  // If still behind, drop leftover to prevent permanent lag
+  if(_accumulator>_TICK_MS*2)_accumulator=0;
   draw();
   requestAnimationFrame(loop);
 }
