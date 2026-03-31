@@ -1,0 +1,4421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PRISON POCKETS</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --accent:#ffdd00;--accent2:#ff6622;--danger:#ff2244;
+  --bg:#07080f;--ui-bg:rgba(0,0,0,0.85);
+}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Press Start 2P',monospace}
+/* Canvas fills entire screen */
+#canvasWrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
+#canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+/* HUD overlays top of canvas */
+#hud{position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px 6px;pointer-events:none;font-size:14px;color:var(--accent);text-shadow:0 0 8px var(--accent),1px 1px #000;background:linear-gradient(to bottom,rgba(0,0,0,.85) 0%,transparent 100%)}
+/* Theme button — floating top-right corner over canvas */
+#themeBtn{position:fixed;top:6px;right:8px;z-index:100;font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);color:#7fff00;border:1px solid #7fff0066;padding:4px 7px;cursor:pointer;transition:all .15s;text-shadow:0 0 6px #7fff00;backdrop-filter:blur(4px)}
+#themeBtn:hover{background:#7fff00;color:#000;text-shadow:none;border-color:#7fff00}
+#muteBtn{position:fixed;top:6px;right:120px;z-index:100;font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);color:#ffaa00;border:1px solid #ffaa0066;padding:4px 7px;cursor:pointer;transition:all .15s;text-shadow:0 0 6px #ffaa00;backdrop-filter:blur(4px)}
+#muteBtn:hover{background:#ffaa00;color:#000;text-shadow:none;border-color:#ffaa00}
+#godBtn{position:fixed;top:6px;right:230px;z-index:100;font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);color:#aaaaaa;border:1px solid #aaaaaa44;padding:4px 7px;cursor:pointer;transition:all .15s;text-shadow:none;backdrop-filter:blur(4px)}
+#godBtn.active{color:#ff44ff;border-color:#ff44ff99;text-shadow:0 0 8px #ff44ff;background:rgba(80,0,80,.75)}
+/* Keyboard hint — floating top-left */
+#kbHint{position:fixed;top:8px;left:8px;z-index:100;font-size:5px;color:#333;display:none;pointer-events:none}
+/* Mobile controls — floating overlay at bottom of screen */
+#stickBar{position:fixed;bottom:0;left:0;right:0;z-index:100;display:none;justify-content:space-between;align-items:center;padding:8px 0 44px;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.4) 70%,transparent 100%);height:150px;gap:0;pointer-events:none;box-sizing:border-box}
+#stickBar.visible{display:flex}
+#stickLeft{touch-action:none;user-select:none;-webkit-user-select:none;display:block;flex-shrink:0;pointer-events:all;margin-left:6px}
+#rightButtons{display:flex;flex-direction:column;gap:8px;align-items:center;flex-shrink:0;pointer-events:all;margin-right:6px}
+.actionBtn{width:88px;height:52px;border-radius:14px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;font-size:8px;color:rgba(255,255,255,.45);touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;transition:all .08s;letter-spacing:1px}
+.actionBtn.pressed{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.7);color:#fff;box-shadow:0 0 12px rgba(255,255,255,.3)}
+</style>
+</head>
+<body>
+<span id="kbHint">← → MOVE · ↑ JUMP · ↓ DUCK · Z LICK · HIDE IN BARRELS</span>
+<button id="themeBtn">🟢 SLIME MODE</button>
+<button id="muteBtn">🔊 SOUND</button>
+<button id="godBtn">👁️ GOD</button>
+<div id="canvasWrap">
+  <canvas id="canvas"></canvas>
+  <div id="hud">
+    <span id="hLives"></span>
+    <span id="hItem" style="text-align:center"></span>
+    <span id="hCoins" style="color:#ffd700;text-shadow:0 0 6px #ffd700,1px 1px #000"></span>
+    <span id="hScore"></span>
+  </div>
+</div>
+<div id="stickBar">
+  <canvas id="stickLeft" width="110" height="110"></canvas>
+  <div id="rightButtons">
+    <div class="actionBtn" id="btnJump">▲ JUMP</div>
+    <div class="actionBtn" id="btnLick" style="border-color:rgba(255,100,120,0.4);color:rgba(255,150,160,0.6)">👅 LICK</div>
+    <div class="actionBtn" id="btnDuck">▼ DUCK</div>
+  </div>
+</div>
+<script>
+// ═══════════════════════════════════════════════════════════
+//  PRISON POCKETS  v2.0  —  10-level polished 8-bit smuggler
+//  Single-file vanilla JS + Canvas
+// ═══════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const W = 800, H = 400;
+canvas.width = W; canvas.height = H;
+
+// ── RESPONSIVE FIT ─────────────────────────────────────────
+function fitCanvas(){
+  const hud=document.getElementById('hud');
+  const s=Math.min(window.innerWidth/W,window.innerHeight/H);
+  const cw=Math.floor(W*s),ch=Math.floor(H*s);
+  canvas.style.width=cw+'px'; canvas.style.height=ch+'px';
+  hud.style.width=cw+'px';
+  hud.style.fontSize=Math.round(Math.max(10,14*s))+'px';
+  hud.style.padding=Math.round(12*s)+'px '+Math.round(14*s)+'px '+Math.round(6*s)+'px';
+}
+fitCanvas(); window.addEventListener('resize',fitCanvas);
+
+// ── THEMES ─────────────────────────────────────────────────
+let slimeMode=false;
+let godMode=false;
+const THEMES={
+  prison:{
+    name:'PRISON POCKETS',tagline:'SNEAK THE GOODS IN',
+    accent:'#ffdd00',accent2:'#ff8800',danger:'#ff2244',
+    skyRows:['#07080f','#0d1428','#1a1a3a','#16213e'],
+    brickA:'#2e2e2e',brickB:'#242424',brickMortar:'#1a1a1a',
+    ceilColor:'#0a0a0a',barColor:'#4a4a5a',
+    floorTop:'#3a3a4a',floorMid:'#2a2a38',floorBot:'#1a1a28',floorLine:'#4a4a5a',
+    platTop:'#5a6070',platBody:'#424855',platShadow:'#22262e',
+    hsBody:'#4a2e12',hsLid:'#6a4a1a',hsRing:'#8a7060',hsDark:'#2a1a08',
+    guardBody:'#2d5a2d',guardBodyDark:'#1d3d1d',guardLeg:'#1a3a1a',
+    guardHead:'#d4a870',guardHat:'#1a2e1a',guardBelt:'#0d1f0d',
+    guardBadge:'#ffdd00',guardGun:'#1a1a1a',
+    pBody:'#2a5cc4',pBodyDark:'#1a3a8a',pHead:'#e8b870',
+    pShoe:'#1a1a1a',pStripe:'rgba(255,255,255,0.2)',
+    goalPost:'#ffdd00',goalBar:'#cc9900',goalGlow:'#ffdd0033',
+    guardName:'GUARD',bgLabel:'CELLBLOCK',
+    starColor:'rgba(255,255,255,0.7)',
+    fogColor:'rgba(7,8,15,0.4)',
+    bulletColor:'#ff8800',bulletGlow:'#ff440033',
+  },
+  slime:{
+    name:'SLIME POCKETS',tagline:'OOZE THE GOODS IN',
+    accent:'#7fff00',accent2:'#00ffaa',danger:'#ff2244',
+    skyRows:['#020d02','#051a05','#0a2a0a','#0d3a0d'],
+    brickA:'#1a3a1a',brickB:'#142e14',brickMortar:'#0a1f0a',
+    ceilColor:'#020d02',barColor:'#2a5a2a',
+    floorTop:'#1f5a1f',floorMid:'#163d16',floorBot:'#0d2a0d',floorLine:'#2a6a2a',
+    platTop:'#2a7a2a',platBody:'#1f5c1f',platShadow:'#0d280d',
+    hsBody:'#0d2a0d',hsLid:'#00bb55',hsRing:'#7fff00',hsDark:'#071407',
+    guardBody:'#5aee00',guardBodyDark:'#3aaa00',guardLeg:'#1a5a00',
+    guardHead:'#aaff60',guardHat:'#2a6a00',guardBelt:'#0d3300',
+    guardBadge:'#ffdd00',guardGun:'#0d2a00',
+    pBody:'#00bb55',pBodyDark:'#008833',pHead:'#aaff80',
+    pShoe:'#003300',pStripe:'rgba(0,255,136,0.25)',
+    goalPost:'#7fff00',goalBar:'#55cc00',goalGlow:'#7fff0033',
+    guardName:'BLOB',bgLabel:'SLIME HQ',
+    starColor:'rgba(127,255,0,0.5)',
+    fogColor:'rgba(2,13,2,0.4)',
+    bulletColor:'#7fff00',bulletGlow:'#00ff8833',
+  }
+};
+let T=THEMES.prison;
+
+// ── LEVEL PALETTE — each level has a unique environment color ──
+const LEVEL_PALETTES=[
+  // lv1: dark stone prison
+  {sky:['#07080f','#0d1020'],brickA:'#2e2e2e',brickB:'#242424',floorTop:'#3a3a4a',ambientLight:'#0d1428'},
+  // lv2: brick red corridor
+  {sky:['#1a0808','#280d0d'],brickA:'#4a1a1a',brickB:'#381212',floorTop:'#4a2a2a',ambientLight:'#3a0808'},
+  // lv3: mossy underground
+  {sky:['#081408','#0d200d'],brickA:'#1e3a1e',brickB:'#162a16',floorTop:'#2a3a2a',ambientLight:'#0a1a0a'},
+  // lv4: deep bunker
+  {sky:['#080814','#0d0d24'],brickA:'#1a1a3a',brickB:'#12122a',floorTop:'#2a2a4a',ambientLight:'#060614'},
+  // lv5: industrial steel
+  {sky:['#101414','#181e1e'],brickA:'#2a3030',brickB:'#1e2424',floorTop:'#303840',ambientLight:'#0c1010'},
+  // lv6: orange alert
+  {sky:['#1a0800','#280d00'],brickA:'#3a1e08',brickB:'#2a1606',floorTop:'#3a2810',ambientLight:'#1a0800'},
+  // lv7: neon corridor
+  {sky:['#020214','#040428'],brickA:'#0a0a2a',brickB:'#060620',floorTop:'#0e0e2a',ambientLight:'#020210'},
+  // lv8: blood red
+  {sky:['#1a0000','#280000'],brickA:'#3a0808',brickB:'#2a0404',floorTop:'#3a1212',ambientLight:'#140000'},
+  // lv9: poison green
+  {sky:['#001a00','#002800'],brickA:'#083a08',brickB:'#062a06',floorTop:'#123a12',ambientLight:'#001400'},
+  // lv10: void black / electric
+  {sky:['#000000','#080010'],brickA:'#14003a',brickB:'#0e0028',floorTop:'#1a0a2a',ambientLight:'#000000'},
+];
+
+// ── ITEMS ──────────────────────────────────────────────────
+const PRISON_ITEMS=[
+  {name:'MYSTERY BOX',emoji:'📦'},{name:'NOKIA 3310',emoji:'📱'},
+  {name:'BIRTHDAY CAKE',emoji:'🎂'},{name:'RUBBER DUCK',emoji:'🐥'},
+  {name:'TINY PIANO',emoji:'🎹'},{name:'LIVE LOBSTER',emoji:'🦞'},
+  {name:'VUVUZELA',emoji:'📯'},{name:'TAXIDERMIED CAT',emoji:'🐱'},
+  {name:'DISCO BALL',emoji:'🪩'},{name:'LIVE CHICKEN',emoji:'🐔'},
+];
+const SLIME_ITEMS=[
+  {name:'SLIME BUCKET',emoji:'🪣'},{name:'GOOP FLASK',emoji:'🧪'},
+  {name:'OOZE CANISTER',emoji:'🫧'},{name:'BLOB EGG',emoji:'🥚'},
+  {name:'TOXIC PUDDING',emoji:'🍮'},{name:'GLOW GOO',emoji:'💚'},
+  {name:'SLIME MOLD',emoji:'🟢'},{name:'MYSTERY SLIME',emoji:'❓'},
+  {name:'OOZE BOMB',emoji:'💣'},{name:'GOO CRYSTAL',emoji:'💎'},
+];
+function pickItem(){const p=slimeMode?SLIME_ITEMS:PRISON_ITEMS;return p[Math.min(level-1,p.length-1)];}
+
+// ── CONSTANTS ──────────────────────────────────────────────
+const FLOOR=310;
+const GRAVITY=0.24,FALL_GRAVITY=0.37;
+const JUMP_V=-6.3,SHORT_JUMP_V=-3.8,MAX_JUMP_FRAMES=10,JUMP_BOOST=0.30;
+
+// ── LEVEL CONFIG — 10 levels ───────────────────────────────
+function getLevelConfig(lv){
+  // lv = 1..10
+  const t=(lv-1)/9; // 0..1 progression
+  return {
+    length:        2800+lv*700,
+    guardCount:    4+lv*3,
+    turretCount:   2+Math.floor(lv*1.0),
+    platformCount: 10+lv*3,
+    hidespotCount: Math.max(7, 12-Math.floor(lv/2)),
+    guardSpeed:    0.38+t*0.52,
+    turretChargeMax: Math.max(40, 80-lv*4),
+    turretBurst:   2+Math.floor(lv*0.3),
+    bulletSpeed:   3+t*1.5,
+    guardShootCD:  Math.max(90, 140-lv*3),
+    visionRange:   160+lv*16,
+    shootingGuardRatio: lv<3?0.33:lv<6?0.5:0.66,
+    hasShooters:   lv>=2,
+  };
+}
+
+// ── INPUT ──────────────────────────────────────────────────
+const keys={};
+document.addEventListener('keydown',e=>{
+  resumeAudio();
+  keys[e.code]=true;
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+  if(state==='title'&&(e.code==='Space'||e.code==='Enter'))startGame();
+  if((state==='dead'||state==='win'||(state==='win_cutscene'&&winCutsceneT>480))&&(e.code==='Space'||e.code==='Enter')){
+    if(state==='dead'){state='title';startTitleMusic();return;}
+    if(state==='win_cutscene'){stopWinMusic();level=1;lives=3;score=0;state='title';startTitleMusic();return;}
+    if(state==='win'){level=1;lives=3;score=0;}
+    startLevel();
+  }
+  // Tongue fire — Z key or X key
+  if(state==='playing'&&(e.code==='KeyZ'||e.code==='KeyX')&&tongue.phase==='idle'&&tongue.cd<=0){
+    fireTongue();
+  }
+  // Skip level — Tab key disabled
+  if(e.code==='Tab')e.preventDefault();
+  // Lick minigame
+  if(state==='lickgame'&&(e.code==='Space'||e.code==='KeyZ'||e.code==='KeyX')){
+    lickTap();e.preventDefault();
+  }
+});
+document.addEventListener('keyup',e=>{keys[e.code]=false;});
+
+// ── MOUSE CONTROLS ─────────────────────────────────────────
+document.addEventListener('mousedown',e=>{
+  if(e.button===0)keys['MouseJump']=true;
+  if(e.button===2)keys['MouseLick']=true;
+  if(state==='lickgame')lickTap();
+});
+document.addEventListener('mouseup',e=>{
+  if(e.button===0)keys['MouseJump']=false;
+  if(e.button===2)keys['MouseLick']=false;
+});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+// Skip button disabled — click handler removed
+
+// ── MOBILE CONTROLS ────────────────────────────────────────
+(function(){
+  const isTouchDevice=()=>window.matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>0;
+  const lc=document.getElementById('stickLeft');
+  const lctx=lc.getContext('2d');
+  const btnJump=document.getElementById('btnJump');
+  const btnDuck=document.getElementById('btnDuck');
+  const R=44,KR=20,CX=55,CY=55;
+  const stick={dx:0,dy:0,active:false,tid:null};
+  const DEAD=0.28;
+  window.jumpBtn={held:false,tid:null};
+  window.duckBtn={held:false,tid:null};
+
+  function getAcc(){return slimeMode?'#7fff00':'#ffdd00';}
+  function drawStick(){
+    const acc=getAcc();
+    lctx.clearRect(0,0,110,110);
+    lctx.beginPath();lctx.arc(CX,CY,R,0,Math.PI*2);
+    lctx.strokeStyle=acc+'44';lctx.lineWidth=2;lctx.stroke();
+    lctx.fillStyle='rgba(0,0,0,0.3)';lctx.fill();
+    // Inner ring
+    lctx.beginPath();lctx.arc(CX,CY,R-8,0,Math.PI*2);
+    lctx.strokeStyle=acc+'22';lctx.lineWidth=1;lctx.stroke();
+    const kx=CX+stick.dx*R,ky=CY+stick.dy*R;
+    const kg=lctx.createRadialGradient(kx-4,ky-5,2,kx,ky,KR);
+    kg.addColorStop(0,acc+'ee');kg.addColorStop(0.6,acc+'88');kg.addColorStop(1,acc+'22');
+    lctx.beginPath();lctx.arc(kx,ky,KR,0,Math.PI*2);
+    lctx.fillStyle=kg;lctx.fill();
+    lctx.strokeStyle=acc+'66';lctx.lineWidth=1.5;lctx.stroke();
+    // Shine
+    lctx.beginPath();lctx.arc(kx-5,ky-5,6,0,Math.PI*2);
+    lctx.fillStyle='rgba(255,255,255,0.15)';lctx.fill();
+  }
+  function applyAll(){
+    drawStick();
+    keys['ArrowLeft']=stick.active&&stick.dx<-DEAD;
+    keys['ArrowRight']=stick.active&&stick.dx>DEAD;
+    keys['ArrowDown']=window.duckBtn.held;
+    keys['ArrowUp']=window.jumpBtn.held;
+  }
+  function stickXY(t){
+    const r=lc.getBoundingClientRect();
+    const sx=lc.width/r.width,sy=lc.height/r.height;
+    const dx=(t.clientX-r.left)*sx-CX,dy=(t.clientY-r.top)*sy-CY;
+    const d=Math.sqrt(dx*dx+dy*dy),cl=Math.min(d,R),a=Math.atan2(dy,dx);
+    return{dx:Math.cos(a)*cl/R,dy:Math.sin(a)*cl/R};
+  }
+  function advance(){
+    if(state==='title')startGame();
+    else if(state==='dead'){state='title';startTitleMusic();return;}
+    else if(state==='win_cutscene'&&winCutsceneT>480){stopWinMusic();level=1;lives=3;score=0;state='title';startTitleMusic();}
+    else if(state==='win'){level=1;lives=3;score=0;startLevel();}
+  }
+  lc.addEventListener('touchstart',e=>{
+    e.preventDefault();resumeAudio();
+    for(const t of e.changedTouches)if(!stick.active){const p=stickXY(t);stick.dx=p.dx;stick.dy=p.dy;stick.active=true;stick.tid=t.identifier;advance();}
+    applyAll();
+  },{passive:false});
+  lc.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    for(const t of e.changedTouches)if(t.identifier===stick.tid){const p=stickXY(t);stick.dx=p.dx;stick.dy=p.dy;}
+    applyAll();
+  },{passive:false});
+  function stickEnd(e){e.preventDefault();for(const t of e.changedTouches)if(t.identifier===stick.tid){stick.dx=0;stick.dy=0;stick.active=false;stick.tid=null;}applyAll();}
+  lc.addEventListener('touchend',stickEnd,{passive:false});lc.addEventListener('touchcancel',stickEnd,{passive:false});
+
+  function mkBtn(btn,obj){
+    btn.addEventListener('touchstart',e=>{e.preventDefault();for(const t of e.changedTouches)if(!obj.held){obj.held=true;obj.tid=t.identifier;btn.classList.add('pressed');advance();}applyAll();},{passive:false});
+    function end(e){e.preventDefault();for(const t of e.changedTouches)if(t.identifier===obj.tid){obj.held=false;obj.tid=null;btn.classList.remove('pressed');}applyAll();}
+    btn.addEventListener('touchend',end,{passive:false});btn.addEventListener('touchcancel',end,{passive:false});
+  }
+  mkBtn(btnJump,window.jumpBtn);mkBtn(btnDuck,window.duckBtn);
+  // Lick button — fires tongue or taps in minigame
+  const btnLick=document.getElementById('btnLick');
+  window.lickBtn={held:false,tid:null};
+  btnLick.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    for(const t of e.changedTouches)if(!window.lickBtn.held){
+      window.lickBtn.held=true;window.lickBtn.tid=t.identifier;
+      btnLick.classList.add('pressed');
+      if(state==='playing'&&tongue.phase==='idle'&&tongue.cd<=0)fireTongue();
+      if(state==='lickgame')lickTap();
+    }
+  },{passive:false});
+  function lickBtnEnd(e){e.preventDefault();for(const t of e.changedTouches)if(t.identifier===window.lickBtn.tid){window.lickBtn.held=false;window.lickBtn.tid=null;btnLick.classList.remove('pressed');}}
+  btnLick.addEventListener('touchend',lickBtnEnd,{passive:false});
+  btnLick.addEventListener('touchcancel',lickBtnEnd,{passive:false});
+
+  window.applyMobileControls=applyAll;
+  function showControls(){
+    document.getElementById('stickBar').classList.add('visible');
+    const h=document.getElementById('kbHint');if(h)h.style.display='none';
+    fitCanvas();applyAll();
+  }
+  if(isTouchDevice())showControls();
+  else{document.getElementById('kbHint').style.display='block';window.addEventListener('touchstart',showControls,{once:true});}
+})();
+
+// ── THEME TOGGLE ───────────────────────────────────────────
+document.getElementById('themeBtn').addEventListener('click',()=>{
+  slimeMode=!slimeMode;T=slimeMode?THEMES.slime:THEMES.prison;
+  item=pickItem();
+  const b=document.getElementById('themeBtn');
+  if(slimeMode){b.textContent='🏛️ PRISON MODE';b.style.color='#ffdd00';b.style.borderColor='#ffdd00';b.style.textShadow='0 0 8px #ffdd00';}
+  else{b.textContent='🟢 SLIME MODE';b.style.color='#7fff00';b.style.borderColor='#7fff00';b.style.textShadow='0 0 8px #7fff00';}
+});
+document.getElementById('muteBtn').addEventListener('click',()=>{resumeAudio();toggleMute();});
+document.getElementById('godBtn').addEventListener('click',()=>{
+  godMode=!godMode;
+  document.getElementById('godBtn').classList.toggle('active',godMode);
+});
+
+// ── SOUND ENGINE (Web Audio API — 8-bit synth) ─────────────
+let audioCtx=null, sfxGain=null, musicGain=null, masterGain=null;
+let soundMuted=false, musicPlaying=false, musicOsc=null, musicTimer=null;
+
+function initAudio(){
+  if(audioCtx)return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=audioCtx.createGain(); masterGain.gain.value=0.4; masterGain.connect(audioCtx.destination);
+  sfxGain=audioCtx.createGain(); sfxGain.gain.value=0.5; sfxGain.connect(masterGain);
+  musicGain=audioCtx.createGain(); musicGain.gain.value=0.18; musicGain.connect(masterGain);
+}
+
+function resumeAudio(){
+  if(!audioCtx)initAudio();
+  if(audioCtx.state==='suspended')audioCtx.resume();
+  if((state==='title'||state==='dead')&&!titleMusicPlaying&&!soundMuted)startTitleMusic();
+}
+
+// Play a tone with given params: freq, duration(s), type, gainNode, volume, slide(end freq)
+function playTone(freq,dur,type,dest,vol,slide){
+  if(soundMuted||!audioCtx)return;
+  const t=audioCtx.currentTime;
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.type=type||'square';
+  o.frequency.setValueAtTime(freq,t);
+  if(slide)o.frequency.linearRampToValueAtTime(slide,t+dur);
+  g.gain.setValueAtTime(vol!==undefined?vol:0.3,t);
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  o.connect(g); g.connect(dest||sfxGain);
+  o.start(t); o.stop(t+dur);
+}
+
+// Play noise burst (for hits/explosions)
+function playNoise(dur,vol,dest){
+  if(soundMuted||!audioCtx)return;
+  const t=audioCtx.currentTime;
+  const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*dur,audioCtx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const src=audioCtx.createBufferSource(); src.buffer=buf;
+  const g=audioCtx.createGain();
+  g.gain.setValueAtTime(vol||0.2,t);
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  src.connect(g); g.connect(dest||sfxGain);
+  src.start(t); src.stop(t+dur);
+}
+
+// ── SFX Library ──
+const SFX={
+  jump(){playTone(260,0.12,'square',sfxGain,0.2,520);},
+  land(){playNoise(0.04,0.08);},
+  lick(){playTone(180,0.08,'sawtooth',sfxGain,0.15,400);playTone(400,0.1,'square',sfxGain,0.1,600);},
+  lickHit(){playTone(300,0.15,'square',sfxGain,0.25,900);playTone(600,0.1,'sawtooth',sfxGain,0.15,150);},
+  caught(){
+    playNoise(0.2,0.3);
+    playTone(400,0.15,'square',sfxGain,0.3,100);
+    setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(200,0.25,'square',sfxGain,0.25,60);},150);
+  },
+  death(){
+    playNoise(0.3,0.35);
+    playTone(440,0.15,'square',sfxGain,0.3,220);
+    setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(220,0.2,'square',sfxGain,0.25,110);},150);
+    setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(110,0.4,'square',sfxGain,0.2,55);},350);
+  },
+  levelClear(){
+    const notes=[523,659,784,1047];
+    notes.forEach((f,i)=>setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(f,0.15,'square',sfxGain,0.2);},i*100));
+  },
+  pickup(){playTone(880,0.08,'square',sfxGain,0.15,1760);playTone(1320,0.12,'square',sfxGain,0.12);},
+  coin(){playTone(1047,0.06,'square',sfxGain,0.08,2093);},
+  shoot(){playNoise(0.08,0.15);playTone(900,0.06,'square',sfxGain,0.1,200);},
+  alert(){playTone(600,0.06,'square',sfxGain,0.12,800);playTone(800,0.08,'square',sfxGain,0.1,600);},
+  lickTap(){playTone(220+Math.random()*100,0.05,'sawtooth',sfxGain,0.1,500);},
+  thongOff(){
+    const notes=[523,659,784,1047,1319,1568];
+    notes.forEach((f,i)=>setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(f,0.12,'square',sfxGain,0.18);},i*70));
+  },
+  win(){
+    const notes=[523,659,784,1047,784,1047,1319,1568];
+    notes.forEach((f,i)=>setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(f,0.18,'square',sfxGain,0.2);},i*120));
+  },
+  menuSelect(){playTone(660,0.06,'square',sfxGain,0.12,880);},
+  hide(){playTone(200,0.1,'triangle',sfxGain,0.1,100);},
+  walk(){playNoise(0.04,0.04);playTone(95,0.04,'triangle',sfxGain,0.05,65);},
+  extraLife(){
+    const notes=[523,659,784,1047,1319];
+    notes.forEach((f,i)=>setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(f,0.14,'square',sfxGain,0.18);},i*80));
+  },
+  thongShield(){
+    playTone(880,0.18,'square',sfxGain,0.2,440);
+    setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(440,0.14,'sawtooth',sfxGain,0.18,220);},80);
+    setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(220,0.12,'square',sfxGain,0.15,110);},180);
+  },
+  bonusAwarded(){
+    playTone(784,0.1,'square',sfxGain,0.18,1568);
+    setTimeout(()=>{if(!soundMuted&&audioCtx)playTone(1047,0.12,'square',sfxGain,0.15);},80);
+  },
+  bonusMissed(){
+    playTone(200,0.08,'triangle',sfxGain,0.08,150);
+  },
+  slurp(){
+    // Wet noise burst
+    playNoise(0.18,0.22);
+    // Tongue drag: sawtooth descending
+    playTone(340,0.28,'sawtooth',sfxGain,0.18,75);
+    // Wet follow-up plop
+    setTimeout(()=>{
+      if(!soundMuted&&audioCtx){playNoise(0.1,0.14);playTone(130,0.12,'sawtooth',sfxGain,0.12,45);}
+    },220);
+  },
+};
+
+// ── Background Music (procedural chiptune loop) ──
+let musicSeqStep=0, musicSeqTimer=null;
+const MUSIC_SCALES={
+  prison:[130.81,146.83,164.81,174.61,196.00,220.00,246.94,261.63],  // C minor-ish
+  slime: [130.81,155.56,164.81,196.00,207.65,246.94,261.63,311.13],  // pentatonic-ish
+};
+
+function startMusic(){
+  if(musicPlaying||soundMuted||!audioCtx)return;
+  stopTitleMusic();
+  musicPlaying=true;musicSeqStep=0;
+  stepMusic();
+}
+function stopMusic(){
+  musicPlaying=false;
+  if(musicSeqTimer){clearTimeout(musicSeqTimer);musicSeqTimer=null;}
+}
+function stepMusic(){
+  if(!musicPlaying||soundMuted||!audioCtx)return;
+  const trk=LEVEL_TRACKS[Math.min(level-1,9)];
+  const s=musicSeqStep%64;
+  const stepMs=Math.round(60000/trk.bpm/4); // 16th-note duration in ms
+  // Melody — square lead
+  const mel=trk.mel[s];
+  if(mel)playTone(mel,stepMs*1.6/1000,'square',musicGain,0.11);
+  // Bass — triangle for warmth
+  const bas=trk.bas[s];
+  if(bas)playTone(bas,stepMs*1.4/1000,'triangle',musicGain,0.20);
+  // Chord stabs — sawtooth pad
+  const chd=trk.chd[s];
+  if(chd&&chd.length)for(const f of chd)playTone(f,stepMs*2.8/1000,'sawtooth',musicGain,0.05);
+  // Drums
+  const drm=trk.drm[s];
+  if(drm==='K')playTone(55,0.10,'triangle',musicGain,0.18,28);
+  if(drm==='S'){playNoise(0.07,0.10,musicGain);playTone(200,0.04,'square',musicGain,0.05,100);}
+  if(drm==='H')playNoise(0.018,0.04,musicGain);
+  musicSeqStep++;
+  // During respawn the tempo gradually slows as the countdown runs
+  const delay=state==='respawn'?stepMs+(respawnT/360)*stepMs*8:stepMs;
+  musicSeqTimer=setTimeout(stepMusic,delay);
+}
+
+// ── Title Screen Music (80s arcade synth) ──────────────────
+let titleMusicPlaying=false, titleStep=0, titleTimer=null;
+const TITLE_BPM=130;
+const TITLE_STEP_MS=Math.round(60000/TITLE_BPM/4); // 16th note ≈ 115ms
+
+// Note helper: name → freq
+const N={
+  C3:130.81,D3:146.83,Eb3:155.56,E3:164.81,F3:174.61,G3:196.00,Ab3:207.65,A3:220.00,Bb3:233.08,B3:246.94,
+  C4:261.63,D4:293.66,Eb4:311.13,E4:329.63,F4:349.23,G4:392.00,Ab4:415.30,A4:440.00,Bb4:466.16,B4:493.88,
+  C5:523.25,D5:587.33,Eb5:622.25,E5:659.26,F5:698.46,G5:783.99,Ab5:830.61,A5:880.00,Bb5:932.33,B5:987.77,
+  C6:1046.50,
+};
+
+// ── WIN HEAVY METAL TRACK ───────────────────────────────────
+// 6 bars, 168 BPM, E minor — "Prison Break Hero"
+// 96 steps (6×16 16th-notes). All freqs in Hz.
+(()=>{
+  // Bass octave notes (below N object range)
+  const E2=82.4,G2=98.0,A2=110.0,B2=123.5,D3=N.D3;
+  // Mid / chord tones
+  const E3=N.E3,G3=N.G3,A3=N.A3,B3=N.B3,D4=N.D4,E4=N.E4,G4=N.G4,B4=N.B4;
+  // Lead melody tones
+  const A4=N.A4,D5=N.D5,E5=N.E5,G5=N.G5,A5=N.A5;
+  // Power chord pairs [root, 5th]
+  const pE=[E4,B4],pG=[G3,D4],pA=[A3,E4],pD=[D4,N.A4],pB=[B3,G4];
+
+  window.WIN_METAL_TRACK={bpm:168,
+    mel:[
+      // Bar 1 — heroic ascending run
+      E4,0,G4,0,A4,0,B4,0,D5,0,E5,0,G5,0,E5,0,
+      // Bar 2 — answering phrase descends
+      G5,0,0,0,A5,0,G5,0,E5,0,D5,0,B4,0,0,0,
+      // Bar 3 — heavy chug, melody punches through
+      0,0,E5,0,0,0,D5,0,0,0,B4,0,G4,0,A4,0,
+      // Bar 4 — freedom gallop
+      E5,0,E5,0,D5,0,0,0,B4,0,G4,0,A4,0,E5,0,
+      // Bar 5 — building to climax
+      A4,0,B4,0,D5,0,E5,0,G5,0,A5,0,G5,0,E5,0,
+      // Bar 6 — triumphant finale
+      E5,0,0,0,G5,0,0,0,A5,0,0,0,E5,0,0,0,
+    ],
+    bas:[
+      // Bar 1 — E pedal with A/B movement
+      E2,0,E2,E2,E2,0,E2,E2,A2,0,A2,A2,E2,0,E2,0,
+      // Bar 2 — G / A / B walkup
+      G2,0,G2,G2,A2,0,A2,A2,B2,0,B2,0,E2,0,E2,0,
+      // Bar 3 — chugging E gallop
+      E2,E2,E2,0,E2,E2,E2,0,E2,E2,D3,0,A2,0,A2,0,
+      // Bar 4 — freedom gallop bass
+      E2,E2,0,E2,E2,0,D3,0,B2,B2,0,B2,D3,0,E2,0,
+      // Bar 5 — A / B / E movement
+      A2,0,A2,A2,B2,0,E2,E2,E2,0,E2,E2,A2,0,A2,0,
+      // Bar 6 — final E/G/A/E power march
+      E2,0,E2,0,G2,0,G2,0,A2,0,A2,0,E2,0,E2,0,
+    ],
+    chd:[
+      // Bar 1
+      pE,0,0,0,pA,0,0,0,pE,0,0,0,pG,0,0,0,
+      // Bar 2
+      pG,0,pG,0,pA,0,pA,0,pE,0,0,0,pB,0,0,0,
+      // Bar 3 — heavy chug every 2
+      pE,pE,pE,0,pE,0,pD,0,pE,pE,0,0,pA,0,0,0,
+      // Bar 4
+      pE,0,pE,0,pD,0,0,0,pB,0,pA,0,pA,0,pE,0,
+      // Bar 5
+      pA,0,pA,0,pB,0,pE,0,pE,0,pA,0,pG,0,pE,0,
+      // Bar 6 — final chord hits
+      pE,0,pE,0,pG,0,pG,0,pA,0,pA,0,pE,0,pE,0,
+    ],
+    drm:[
+      // Bar 1 — classic metal beat: K on 1+1e, S on 2+4
+      'K','H','K','H','S','H','K','H','K','H','K','H','S','H','K','H',
+      // Bar 2 — gallop variation
+      'K','H','H','K','S','H','K','H','K','H','H','K','S','H','K','H',
+      // Bar 3 — double-kick breakdown
+      'K','K','H','K','S','K','K','H','K','K','H','K','S','H','K','K',
+      // Bar 4 — gallop
+      'K','H','H','K','S','H','K','H','K','H','H','K','S','H','K','H',
+      // Bar 5 — build, tighter 16ths
+      'K','H','K','H','S','H','K','H','K','H','K','H','S','H','K','H',
+      // Bar 6 — final fill then hit
+      'K','K','H','K','S','K','H','K','K','K','H','K','S','0','H','K',
+    ],
+  };
+})();
+
+function startWinMusic(){
+  if(winMusicPlaying||soundMuted||!audioCtx)return;
+  stopMusic(); // ensure game music is silent
+  winMusicPlaying=true;winMusicStep=0;
+  stepWinMusic();
+}
+function stopWinMusic(){
+  winMusicPlaying=false;
+  if(winMusicTimer){clearTimeout(winMusicTimer);winMusicTimer=null;}
+}
+function stepWinMusic(){
+  if(!winMusicPlaying||soundMuted||!audioCtx)return;
+  const trk=window.WIN_METAL_TRACK;
+  const s=winMusicStep%96;
+  const stepMs=Math.round(60000/168/4); // ≈89ms per 16th note
+  const mel=trk.mel[s];
+  if(mel)playTone(mel,stepMs*1.3/1000,'sawtooth',musicGain,0.13);
+  const bas=trk.bas[s];
+  if(bas)playTone(bas,stepMs*1.5/1000,'triangle',musicGain,0.19);
+  const chd=trk.chd[s];
+  if(chd&&chd.length)for(const f of chd)playTone(f,stepMs*1.8/1000,'sawtooth',musicGain,0.07);
+  const drm=trk.drm[s];
+  if(drm==='K')playTone(55,0.12,'triangle',musicGain,0.24,28);
+  if(drm==='S'){playNoise(0.07,0.13,musicGain);playTone(180,0.05,'square',musicGain,0.07,80);}
+  if(drm==='H')playNoise(0.015,0.06,musicGain);
+  winMusicStep++;
+  winMusicTimer=setTimeout(stepWinMusic,stepMs);
+}
+
+// ── LEVEL MUSIC TRACKS ─────────────────────────────────────
+// 10 unique chiptune tracks, one per level.
+// Each: { bpm, mel[64], bas[64], chd[64], drm[64] }
+// drm: 'K'=kick, 'S'=snare, 'H'=hi-hat, 0=rest
+// chd[s]: array of freqs (sawtooth chord stab) or 0/null (rest)
+const LEVEL_TRACKS=(()=>{
+  const{C3,D3,Eb3,E3,F3,G3,Ab3,A3,Bb3,B3,
+        C4,D4,Eb4,E4,F4,G4,Ab4,A4,Bb4,B4,
+        C5,D5,Eb5,E5,F5,G5,Ab5,A5,Bb5,B5}=N;
+  return[
+    // LV1 — Dark Stone Prison: slow ominous C minor, BPM 88
+    {bpm:88,
+     mel:[0,0,0,0,Eb5,0,C5,0,Bb4,0,0,0,G4,0,0,0,
+          0,0,0,0,G4,0,Ab4,0,G4,0,0,0,0,0,0,0,
+          // Bar 3: Fm descent
+          0,0,Bb4,0,0,0,G4,0,F4,0,0,0,Eb4,0,0,0,
+          // Bar 4: G→Cm return
+          D5,0,0,0,C5,0,Bb4,0,G4,0,0,0,C5,0,0,0],
+     bas:[C3,0,C3,0,C3,0,0,0,Ab3,0,Ab3,0,G3,0,0,0,
+          F3,0,F3,0,F3,0,C3,0,G3,0,G3,0,C3,0,0,0,
+          // Bar 3: Fm→Bb
+          F3,0,F3,0,Bb3,0,Bb3,0,F3,0,C4,0,Bb3,0,0,0,
+          // Bar 4: G→Cm
+          G3,0,G3,0,G3,0,D4,0,C3,0,G3,0,C3,0,0,0],
+     chd:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+     drm:['K',0,'H',0,'S',0,'H',0,'K',0,'H',0,'S',0,'H',0,
+          'K',0,'H',0,'S',0,'H',0,'K',0,'H','H','S',0,'K',0,
+          'K',0,'H',0,'S',0,'H',0,'K',0,'H',0,'S',0,'H',0,
+          'K',0,'H',0,'S',0,'H',0,'K',0,'H','H','S',0,'K',0]},
+    // LV2 — Brick Red Corridor: punchy D minor march, BPM 115
+    {bpm:115,
+     mel:[D5,0,F5,0,A4,0,D5,0,C5,0,Bb4,0,A4,0,0,0,
+          F4,0,G4,0,A4,C5,A4,0,G4,0,F4,0,D4,0,0,0,
+          // Bar 3: Bb→A lift
+          E5,0,D5,0,C5,0,Bb4,0,A4,0,Bb4,0,C5,0,0,0,
+          // Bar 4: Dm cadence
+          A4,0,F4,0,G4,0,A4,0,D5,0,C5,0,Bb4,0,0,0],
+     bas:[D3,0,D3,0,A3,0,D3,0,Bb3,0,Bb3,0,A3,0,0,0,
+          F3,0,G3,0,A3,0,A3,0,G3,0,F3,0,D3,0,0,0,
+          // Bar 3
+          Bb3,0,Bb3,0,A3,0,A3,0,Bb3,0,F3,0,A3,0,0,0,
+          // Bar 4
+          D3,0,A3,0,G3,0,D3,0,F3,0,C4,0,D3,0,0,0],
+     chd:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+     drm:['K','H','H','H','S','H','K','H','K','H','H','H','S','H','H','K',
+          'K','H','H','H','S','H','K','H','K','H','S','H','S','K','H','H',
+          'K','H','H','H','S','H','K','H','K','H','H','H','S','H','H','K',
+          'K','H','H','H','S','H','K','H','K','H','S','H','S','K','H','H']},
+    // LV3 — Mossy Underground: bouncy F major cave groove, BPM 124
+    {bpm:124,
+     mel:[F5,0,A4,0,C5,0,F5,0,E5,0,D5,0,C5,0,0,0,
+          Bb4,0,C5,0,D5,0,C5,0,Bb4,0,A4,0,F4,0,0,0,
+          // Bar 3: Dm→Am
+          A4,0,C5,0,E5,0,D5,0,C5,0,Bb4,0,A4,0,0,0,
+          // Bar 4: C→F home
+          G4,0,A4,0,Bb4,0,C5,0,F5,0,0,0,F4,0,0,0],
+     bas:[F3,0,F3,0,C4,0,F3,0,Bb3,0,Bb3,0,C4,0,0,0,
+          F3,0,G3,0,A3,0,Bb3,0,C4,0,A3,0,F3,0,0,0,
+          // Bar 3
+          D3,0,A3,0,D4,0,0,0,A3,0,E4,0,A3,0,0,0,
+          // Bar 4
+          C4,0,G3,0,C4,0,E4,0,F3,0,C4,0,F3,0,0,0],
+     chd:[[F4,A4,C5],0,0,0,0,0,0,0,[Bb3,D4,F4],0,0,0,0,0,0,0,
+          [F4,A4,C5],0,0,0,0,0,0,0,[C4,E4,G4],0,0,0,0,0,0,0,
+          // Bar 3
+          [D4,F4,A4],0,0,0,0,0,0,0,[A3,C4,E4],0,0,0,0,0,0,0,
+          // Bar 4
+          [C4,E4,G4],0,0,0,0,0,0,0,[F4,A4,C5],0,0,0,0,0,0,0],
+     drm:['K',0,'H','H','S',0,'H',0,'K','H','H',0,'S',0,'H','H',
+          'K',0,'H','H','S',0,'H',0,'K','H','H',0,'S','K','H','H',
+          'K',0,'H','H','S',0,'H',0,'K','H','H',0,'S',0,'H','H',
+          'K',0,'H','H','S',0,'H',0,'K','H','H',0,'S','K','H','H']},
+    // LV4 — Deep Bunker: tense A minor military, BPM 106
+    {bpm:106,
+     mel:[0,0,A4,0,0,0,E5,0,D5,0,C5,0,0,B4,0,0,
+          A4,0,0,0,0,C5,0,B4,A4,0,G4,0,E4,0,0,0,
+          // Bar 3: F→E tension
+          0,0,F5,0,E5,0,D5,0,C5,0,B4,0,0,0,0,0,
+          // Bar 4: Bb passing→Am
+          A4,0,Bb4,0,A4,0,G4,0,E4,0,F4,0,A4,0,0,0],
+     bas:[A3,0,A3,0,A3,0,0,0,D4,0,D4,0,E4,0,0,0,
+          A3,0,A3,0,C4,0,B3,0,A3,0,G3,0,E3,0,0,0,
+          // Bar 3
+          F3,0,F3,0,E3,0,E3,0,F3,0,C4,0,E3,0,0,0,
+          // Bar 4
+          A3,0,Bb3,0,A3,0,G3,0,E3,0,F3,0,A3,0,0,0],
+     chd:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+     drm:['K',0,0,'H','S',0,'H',0,'K',0,0,'H','S',0,'H',0,
+          'K',0,0,'H','S',0,'H',0,'K',0,'S','H','S','K','H','H',
+          'K',0,0,'H','S',0,'H',0,'K',0,0,'H','S',0,'H',0,
+          'K',0,0,'H','S',0,'H',0,'K',0,'S','H','S','K','H','H']},
+    // LV5 — Industrial Steel: mechanical E minor 16ths, BPM 132
+    {bpm:132,
+     mel:[E5,0,D5,0,B4,0,D5,0,E5,0,G5,0,D5,0,B4,0,
+          A4,0,B4,0,C5,0,B4,0,A4,0,G4,0,E4,0,0,0,
+          // Bar 3: C→Am
+          C5,0,E5,0,D5,0,C5,0,A4,0,B4,0,C5,0,0,0,
+          // Bar 4: B dominant→Em with F natural colour
+          B4,D5,F5,D5,B4,0,A4,0,G4,0,F5,0,E5,0,0,0],
+     bas:[E3,0,E3,E3,B3,0,E3,0,C4,0,C4,0,B3,0,0,0,
+          A3,0,A3,0,B3,0,B3,0,A3,0,G3,0,E3,0,0,0,
+          // Bar 3
+          C4,0,C4,0,A3,0,A3,0,B3,0,G3,0,B3,0,0,0,
+          // Bar 4
+          B3,0,B3,B3,F3,0,A3,0,E3,0,E3,0,E3,0,0,0],
+     chd:[[E4,G4,B4],0,0,0,0,0,0,0,[C4,E4,G4],0,0,0,0,0,0,0,
+          [A3,C4,E4],0,0,0,0,0,0,0,[B3,D4,F4],0,0,0,0,0,0,0,
+          // Bar 3
+          [C4,E4,G4],0,0,0,0,0,0,0,[A3,C4,E4],0,0,0,0,0,0,0,
+          // Bar 4
+          [B3,D4,F4],0,0,0,0,0,0,0,[E4,G4,B4],0,0,0,0,0,0,0],
+     drm:['K','H','K','H','S','H','K','H','K','H','K','H','S','H','H','H',
+          'K','H','K','H','S','H','K','H','K','H','K','H','S','S','H','H',
+          'K','H','K','H','S','H','K','H','K','H','K','H','S','H','H','H',
+          'K','H','K','H','S','H','K','H','K','H','K','H','S','S','H','H']},
+    // LV6 — Orange Alert: urgent C minor alarm, BPM 142
+    {bpm:142,
+     mel:[C5,Eb5,G5,0,Bb5,0,G5,0,Eb5,0,C5,0,G4,0,Bb4,0,
+          C5,0,D5,0,Eb5,0,G5,0,Ab5,0,G5,Eb5,C5,0,0,0,
+          // Bar 3: Bb5 peak over Ab→Eb
+          Bb5,0,Ab5,0,G5,0,Eb5,0,F5,0,Eb5,0,D5,0,0,0,
+          // Bar 4: G5 rush down to C
+          G5,F5,Eb5,D5,C5,0,Bb4,0,Ab4,0,G4,0,C5,0,0,0],
+     bas:[C3,0,G3,0,C3,0,G3,0,Ab3,0,Eb3,0,G3,0,D3,0,
+          C3,0,C3,G3,Ab3,0,Eb3,0,G3,0,D3,0,C3,0,0,0,
+          // Bar 3
+          Ab3,0,Ab3,0,Eb3,0,Eb3,0,F3,0,C4,0,G3,0,0,0,
+          // Bar 4
+          G3,0,G3,G3,C3,0,C3,0,C3,0,G3,0,C3,0,0,0],
+     chd:[[C4,Eb4,G4],0,0,0,0,0,0,0,[Ab3,C4,Eb4],0,0,0,0,0,0,0,
+          [C4,Eb4,G4],0,0,0,[Ab3,C4,Eb4],0,0,0,[G3,B3,D4],0,0,0,0,0,0,0,
+          // Bar 3
+          [Ab3,C4,Eb4],0,0,0,0,0,0,0,[Eb3,G3,Bb3],0,0,0,0,0,0,0,
+          // Bar 4
+          [G3,B3,D4],0,0,0,0,0,0,0,[C4,Eb4,G4],0,0,0,0,0,0,0],
+     drm:['K','H','H','H','S','K','H','H','K','H','H','H','S','K','H','H',
+          'K','H','H','H','S','K','H','H','K','H','H','S','S','K','K','H',
+          'K','H','H','H','S','K','H','H','K','H','H','H','S','K','H','H',
+          'K','H','H','H','S','K','H','H','K','H','H','S','S','K','K','H']},
+    // LV7 — Neon Corridor: synthwave G minor, BPM 118
+    {bpm:118,
+     mel:[G5,0,F5,0,Eb5,0,D5,0,Bb4,0,C5,0,D5,0,0,0,
+          Eb5,0,D5,0,C5,0,Bb4,0,G4,Bb4,D5,0,G5,0,0,0,
+          // Bar 3: Cm descent
+          C5,0,Bb4,0,Ab4,0,G4,0,F4,0,Eb4,0,F4,0,0,0,
+          // Bar 4: F→D→Gm cadence
+          D5,0,C5,0,Bb4,0,Ab4,0,G4,0,F4,0,G5,0,0,0],
+     bas:[G3,0,D4,0,G3,0,D4,0,Eb3,0,Bb3,0,D4,0,0,0,
+          C4,0,G3,0,F3,0,C4,0,Bb3,D4,F4,0,G3,0,0,0,
+          // Bar 3
+          C4,0,G3,0,Ab3,0,Eb3,0,F3,0,C4,0,G3,0,0,0,
+          // Bar 4
+          Bb3,0,F4,0,D3,0,A3,0,G3,0,D4,0,G3,0,0,0],
+     chd:[[G3,Bb3,D4],0,0,0,0,0,0,0,[Eb3,G3,Bb3],0,[D3,F3,A3],0,0,0,0,0,
+          [C3,Eb3,G3],0,0,0,[F3,A3,C4],0,0,0,[Bb3,D4,F4],0,0,0,[G3,Bb3,D4],0,0,0,
+          // Bar 3
+          [C4,Eb4,G4],0,0,0,0,0,0,0,[Ab3,C4,Eb4],0,0,0,0,0,0,0,
+          // Bar 4
+          [Bb3,D4,F4],0,0,0,[D3,F3,A3],0,0,0,[G3,Bb3,D4],0,0,0,0,0,0,0],
+     drm:['K',0,'H',0,'S',0,'K','H','K',0,'H',0,'S',0,'H','H',
+          'K',0,'H',0,'S',0,'K','H','K','H','H','H','S',0,'H',0,
+          'K',0,'H',0,'S',0,'K','H','K',0,'H',0,'S',0,'H','H',
+          'K',0,'H',0,'S',0,'K','H','K','H','H','H','S',0,'H',0]},
+    // LV8 — Blood Red: heavy B minor/diminished menace, BPM 126
+    {bpm:126,
+     mel:[B4,0,0,0,D5,0,B4,0,E5,0,D5,0,B4,A4,0,0,
+          G4,0,A4,0,B4,0,D5,0,E5,0,F5,0,E5,0,0,0,
+          // Bar 3: Am→Em area
+          A4,0,C5,0,E5,0,C5,0,A4,0,G4,0,E4,0,0,0,
+          // Bar 4: G→Fdim→Bm return
+          G4,0,Ab4,0,B4,0,D5,0,F5,0,E5,0,B4,0,0,0],
+     bas:[B3,0,B3,0,B3,0,0,0,E3,0,E3,0,F3,0,0,0,
+          G3,0,G3,0,A3,0,A3,0,E3,0,F3,0,B3,0,0,0,
+          // Bar 3
+          A3,0,A3,0,E3,0,E3,0,A3,0,E4,0,A3,0,0,0,
+          // Bar 4
+          G3,0,Ab3,0,B3,0,F3,0,B3,0,0,0,B3,0,0,0],
+     chd:[[B3,D4,F4],0,0,0,0,0,0,0,[E3,G3,B3],0,0,0,[F3,Ab3,C4],0,0,0,
+          [G3,Bb3,D4],0,0,0,[A3,C4,E4],0,0,0,[E3,G3,B3],0,0,0,[B3,D4,F4],0,0,0,
+          // Bar 3
+          [A3,C4,E4],0,0,0,0,0,0,0,[E3,G3,B3],0,0,0,0,0,0,0,
+          // Bar 4
+          [G3,B3,D4],0,0,0,[F3,Ab3,B3],0,0,0,[B3,D4,F4],0,0,0,0,0,0,0],
+     drm:['K','K','H','H','S',0,'H','H','K','K','H','H','S',0,'H','K',
+          'K','K','H','H','S',0,'H','H','K','K','S','H','S','K','S','H',
+          'K','K','H','H','S',0,'H','H','K','K','H','H','S',0,'H','K',
+          'K','K','H','H','S',0,'H','H','K','K','S','H','S','K','S','H']},
+    // LV9 — Poison Green: chromatic tritone creepiness, BPM 112
+    {bpm:112,
+     mel:[C5,0,F5,0,Eb5,0,B4,0,Ab4,0,Eb5,0,D5,0,Ab4,0,
+          Bb4,0,E5,0,Ab5,0,E5,0,Bb4,0,F5,0,Eb5,0,0,0,
+          // Bar 3: more tritone leaps
+          D5,0,Ab4,0,C5,0,F5,0,D5,0,Ab5,0,Eb5,0,0,0,
+          // Bar 4: descending chromatic
+          Bb4,0,A4,0,Ab4,0,G4,0,F4,0,E4,0,Eb4,0,0,0],
+     bas:[C3,0,F3,0,Eb3,0,B3,0,Ab3,0,Eb3,0,D3,0,Ab3,0,
+          G3,0,C4,0,C3,0,F3,0,B3,0,F3,0,C3,0,0,0,
+          // Bar 3
+          D3,0,Ab3,0,C3,0,F3,0,D3,0,Ab3,0,G3,0,0,0,
+          // Bar 4
+          Bb3,0,A3,0,Ab3,0,G3,0,F3,0,E3,0,Eb3,0,0,0],
+     chd:[[C4,F4,B4],0,0,0,0,0,0,0,[Ab3,D4,Ab4],0,0,0,0,0,0,0,
+          [Bb3,E4,Bb4],0,0,0,0,0,0,0,[B3,F4,B4],0,0,0,0,0,0,0,
+          // Bar 3
+          [D4,Ab4,D5],0,0,0,0,0,0,0,[C4,F4,B4],0,0,0,0,0,0,0,
+          // Bar 4
+          [Bb3,E4,Bb4],0,0,0,0,0,0,0,[Ab3,D4,Ab4],0,0,0,0,0,0,0],
+     drm:['K',0,'H',0,0,'S','H',0,'K',0,'H','H','S',0,'K',0,
+          0,'H','K',0,'S',0,'H','H','K','K','H',0,'S','H',0,'H',
+          'K',0,'H',0,0,'S','H',0,'K',0,'H','H','S',0,'K',0,
+          0,'H','K',0,'S',0,'H','H','K','K','H',0,'S','H',0,'H']},
+    // LV10 — Void Black/Electric: epic E minor finale, BPM 148
+    {bpm:148,
+     mel:[E5,0,G5,0,B5,0,A5,0,G5,0,F5,0,E5,0,D5,0,
+          C5,0,D5,0,E5,G5,E5,0,D5,0,B4,0,E5,0,0,0,
+          // Bar 3: B5 peak descent
+          B5,0,A5,0,G5,0,F5,0,E5,0,D5,0,B4,0,0,0,
+          // Bar 4: sweeping Am→D→B→Em
+          A4,0,C5,0,E5,0,G5,0,D5,0,F5,0,B4,D5,E5,0],
+     bas:[E3,0,E3,E3,B3,0,B3,0,C4,0,G3,0,A3,0,0,0,
+          F3,0,C4,0,D4,0,A3,0,B3,E3,B3,0,E3,0,0,0,
+          // Bar 3
+          B3,0,B3,B3,G3,0,G3,0,C4,0,G3,0,E3,0,0,0,
+          // Bar 4
+          A3,0,E4,0,D4,0,A3,0,B3,0,F3,0,E3,0,0,0],
+     chd:[[E4,G4,B4],0,0,0,[B3,D4,G4],0,0,0,[C4,E4,G4],0,0,0,[A3,C4,E4],0,0,0,
+          [F3,A3,C4],0,0,0,[D4,F4,A4],0,0,0,[B3,D4,F4],0,0,0,[E4,G4,B4],0,0,0,
+          // Bar 3
+          [B3,D4,F4],0,0,0,[E4,G4,B4],0,0,0,[C4,E4,G4],0,0,0,[G3,B3,D4],0,0,0,
+          // Bar 4
+          [A3,C4,E4],0,0,0,[D4,F4,A4],0,0,0,[B3,D4,F4],0,0,0,[E4,G4,B4],0,0,0],
+     drm:['K','H','H','H','S','H','K','H','K','H','H','H','S','H','K','H',
+          'K','H','H','H','S','H','K','H','K','K','S','H','S','K','K','H',
+          'K','H','H','H','S','H','K','H','K','H','H','H','S','H','K','H',
+          'K','H','H','H','S','H','K','H','K','K','S','H','S','K','K','H']},
+  ];
+})();
+
+// 96-step loop (6 bars of 4/4 in 16th notes)
+// Catchy 80s synth melody in C minor — think Axel F / Top Gun / OutRun vibes
+const TITLE_MELODY=[
+  // Bar 1: rising hook (Cm)
+  N.C5,0,N.Eb5,0, N.G5,N.Eb5,N.C5,0,  N.Bb4,0,N.C5,0, N.G4,0,0,0,
+  // Bar 2: descending answer
+  N.Ab4,0,N.Bb4,0, N.C5,N.Eb5,N.C5,0,  N.G4,0,N.Ab4,0, N.G4,0,0,0,
+  // Bar 3: lift to Eb/Bb — bright synth peak, OutRun energy surge
+  N.G5,0,N.Bb5,0, N.G5,0,N.Eb5,0,  N.F5,0,N.Eb5,0, N.D5,0,0,0,
+  // Bar 4: stepwise descent Ab→G — tension winding back down
+  N.Eb5,0,N.D5,0, N.C5,0,N.Bb4,0,  N.Ab4,0,N.G4,0, N.Eb4,0,0,0,
+  // Bar 5: echo of bar 1 with tail variation
+  N.C5,0,N.Eb5,0, N.G5,N.Eb5,N.C5,0,  N.Bb4,0,N.Eb5,0, N.D5,N.C5,0,0,
+  // Bar 6: Fm→G cadential push straight back into bar 1
+  N.Ab4,0,N.Bb4,0, N.C5,0,N.D5,0,  N.Eb5,0,N.C5,0, N.G4,0,0,0,
+];
+const TITLE_BASS=[
+  // Bar 1
+  N.C3,0,0,0, N.C3,0,N.G3,0, N.Ab3,0,0,0, N.Ab3,0,N.Bb3,0,
+  // Bar 2
+  N.F3,0,0,0, N.F3,0,N.G3,0, N.C3,0,0,0, N.C3,0,N.G3,0,
+  // Bar 3: Eb pedal → Bb
+  N.Eb3,0,0,0, N.Eb3,0,N.Bb3,0, N.Bb3,0,0,0, N.Bb3,0,N.Ab3,0,
+  // Bar 4: Ab → G dominant
+  N.Ab3,0,N.Eb3,0, N.G3,0,N.G3,0, N.G3,0,N.D4,0, N.G3,0,0,0,
+  // Bar 5: same root motion as bar 1
+  N.C3,0,0,0, N.C3,0,N.G3,0, N.Ab3,0,0,0, N.G3,0,N.G3,0,
+  // Bar 6: Fm → G → Cm cadence
+  N.F3,0,0,0, N.F3,0,N.G3,0, N.Ab3,0,N.Bb3,0, N.C3,0,N.G3,0,
+];
+const TITLE_CHORDS=[
+  // Bar 1: Cm | Ab
+  [N.C4,N.Eb4,N.G4],null,null,null,null,null,null,null,
+  [N.Ab3,N.C4,N.Eb4],null,null,null,null,null,null,null,
+  // Bar 2: Fm | Cm → G
+  [N.F3,N.Ab3,N.C4],null,null,null,null,null,null,null,
+  [N.C4,N.Eb4,N.G4],null,null,null,[N.G3,N.B3,N.D4],null,null,null,
+  // Bar 3: Eb | Bb
+  [N.Eb4,N.G4,N.Bb4],null,null,null,null,null,null,null,
+  [N.Bb3,N.D4,N.F4],null,null,null,null,null,null,null,
+  // Bar 4: Ab | G
+  [N.Ab3,N.C4,N.Eb4],null,null,null,null,null,null,null,
+  [N.G3,N.B3,N.D4],null,null,null,null,null,null,null,
+  // Bar 5: Cm | Ab
+  [N.C4,N.Eb4,N.G4],null,null,null,null,null,null,null,
+  [N.Ab3,N.C4,N.Eb4],null,null,null,null,null,null,null,
+  // Bar 6: Fm | G — strong dominant push back to bar 1
+  [N.F3,N.Ab3,N.C4],null,null,null,null,null,null,null,
+  [N.G3,N.B3,N.D4],null,null,null,null,null,null,null,
+];
+// Drum pattern: K=kick, S=snare, H=hat
+const TITLE_DRUMS=[
+  // Bar 1
+  'K','H','H','H', 'S','H','K','H', 'K','H','H','H', 'S','H','H','K',
+  // Bar 2
+  'K','H','H','H', 'S','H','K','H', 'K','H','H','H', 'S','H','K','H',
+  // Bar 3: same groove, ride it
+  'K','H','H','H', 'S','H','K','H', 'K','H','H','H', 'S','H','H','K',
+  // Bar 4: extra kick on the and-of-3 lifts energy
+  'K','H','H','H', 'S','H','K','H', 'K','H','K','H', 'S','H','K','H',
+  // Bar 5: double kick opener for the echo
+  'K','H','K','H', 'S','H','K','H', 'K','H','H','H', 'S','H','H','K',
+  // Bar 6: fill — extra snare/kick hits to drive the cadence home
+  'K','H','H','H', 'S','K','H','H', 'K','H','K','H', 'S','K','K','H',
+];
+// Arpeggio notes (play fast arps on certain steps for 80s shimmer)
+const TITLE_ARP_STEPS=new Set([2,6,10,14,18,22,26,30,34,38,42,46,50,54,58,62,66,70,74,78,82,86,90,94]);
+const TITLE_ARP_NOTES=[N.C5,N.Eb5,N.G5,N.C6];
+
+function startTitleMusic(){
+  if(titleMusicPlaying||soundMuted||!audioCtx)return;
+  titleMusicPlaying=true;titleStep=0;
+  stepTitleMusic();
+}
+function stopTitleMusic(){
+  titleMusicPlaying=false;
+  if(titleTimer){clearTimeout(titleTimer);titleTimer=null;}
+}
+function stepTitleMusic(){
+  if(!titleMusicPlaying||soundMuted||!audioCtx)return;
+  const s=titleStep%96;
+
+  // Melody (square wave lead)
+  const mel=TITLE_MELODY[s];
+  if(mel)playTone(mel,TITLE_STEP_MS*1.8/1000,'square',musicGain,0.13);
+
+  // Bass (triangle for fat 80s bass)
+  const bass=TITLE_BASS[s];
+  if(bass)playTone(bass,TITLE_STEP_MS*1.5/1000,'triangle',musicGain,0.22);
+
+  // Chords (sawtooth pad — short stabs)
+  const chord=TITLE_CHORDS[s];
+  if(chord){
+    for(const f of chord)playTone(f,TITLE_STEP_MS*3/1000,'sawtooth',musicGain,0.06);
+  }
+
+  // Drums
+  const drum=TITLE_DRUMS[s];
+  if(drum==='K')playTone(55,0.1,'triangle',musicGain,0.2,30);      // kick
+  if(drum==='S'){playNoise(0.07,0.12,musicGain);playTone(200,0.04,'square',musicGain,0.06,100);} // snare
+  if(drum==='H')playNoise(0.02,0.05,musicGain);                     // hat
+
+  // 80s shimmer arpeggios
+  if(TITLE_ARP_STEPS.has(s)){
+    TITLE_ARP_NOTES.forEach((f,i)=>{
+      setTimeout(()=>{
+        if(titleMusicPlaying&&!soundMuted&&audioCtx)playTone(f,0.06,'square',musicGain,0.04);
+      },i*25);
+    });
+  }
+
+  titleStep++;
+  titleTimer=setTimeout(stepTitleMusic,TITLE_STEP_MS);
+}
+
+function toggleMute(){
+  soundMuted=!soundMuted;
+  if(soundMuted){stopMusic();stopTitleMusic();}
+  else{
+    if(state==='playing'||state==='lickgame')startMusic();
+    if(state==='title'||state==='dead')startTitleMusic();
+  }
+  const mb=document.getElementById('muteBtn');
+  mb.textContent=soundMuted?'🔇 MUTED':'🔊 SOUND';
+}
+
+// ── GAME STATE ─────────────────────────────────────────────
+let state='title';   // title|cutscene|playing|lickgame|lickresult|conjugal_cutscene|dead|win|respawn
+let conjugalCutsceneT=0, conjugalCutsceneDur=530;
+let cutsceneT=0, cutsceneDur=750; // ~12.5s at 60fps
+let level=1,lives=3,score=0;
+let item=null;
+let worldX=0;
+let player,guards,platforms,hidespots,turrets,goalX,levelWidth;
+let thongPickups=[];
+let heartPickup=null;
+let coins=[];
+let coinsCollected=0,coinsTotal=0;
+let bullets=[],particles=[],alertBubbles=[];
+let caughtFlash=0,clearTimer=0,respawnT=0;
+let guardsEverPuddled=new Set(),turretsEverPuddled=new Set(),levelBonuses={};
+let bustCutsceneT=0,bustCutsceneDur=320,bustIsGameOver=false,bustTaunt={l1:'',l2:''};
+const BUST_TAUNTS={
+  over:[
+    {l1:'STAY DOWN. 💀',  l2:'Absolute clown.'},
+    {l1:'GAME OVER. 💀',  l2:'Stay in your cell.'},
+    {l1:'TOO SLOW. 💀',   l2:'Never had a chance.'},
+    {l1:'CAUGHT AGAIN.💀',l2:'Embarrassing.'},
+    {l1:'ALL DONE. 💀',   l2:'Pack it up.'},
+  ],
+  reg:[
+    {l1:'Not even close,',l2:'baby. 😎'},
+    {l1:'Did you really', l2:'just try that? 😂'},
+    {l1:'Back to your cell,',l2:'pal. 👮'},
+    {l1:'Predictable.',   l2:'Try harder. 😏'},
+    {l1:'Classic move.',  l2:'Wrong again. 😄'},
+  ],
+  overSlime:[
+    {l1:'INFINITE L. 💀', l2:'get slimed.'},
+    {l1:'SLIMED OUT. 💀', l2:'no cap fr fr.'},
+    {l1:'RATIO\'D. 💀',   l2:'you\'re cooked.'},
+    {l1:'SLIME JAIL. 💀', l2:'no escape.'},
+    {l1:'GG NO RE. 💀',   l2:'slime wins.'},
+  ],
+  regSlime:[
+    {l1:'Slimed in 4K.',  l2:'📸 ratio.'},
+    {l1:'mid escape tbh', l2:'cope + seethe 🍀'},
+    {l1:'u got cooked',   l2:'slime diff 💚'},
+    {l1:'skill issue.',   l2:'stay slimed. 😂'},
+    {l1:'bruh.',          l2:'not today 💀'},
+  ],
+};
+let winCutsceneT=0,winCutsceneDur=7200;
+let wardenCutsceneT=0,wardenCutsceneDur=720;
+let winMusicPlaying=false,winMusicStep=0,winMusicTimer=null;
+let frameCount=0;
+let levelCfg={};
+let palette={};
+
+// Tongue weapon state
+let tongue={active:false,x:0,y:0,len:0,maxLen:60,dir:1,phase:'idle',hitGuard:null,cd:0};
+// Lick minigame state
+let lickGame={active:false,count:0,timeLeft:0,timer:null,best:0,lastScore:0,pendingLevel:0,thongOff:false,thongFallT:0,tongueFrame:99};
+
+// ── HELPERS ────────────────────────────────────────────────
+function rand(a,b){return a+Math.random()*(b-a);}
+function overlaps(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+function lerp(a,b,t){return a+(b-a)*t;}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+
+// Pixel text with drop shadow + optional glow
+function pxt(txt,x,y,sz,col,align,glow){
+  sz=sz||8;col=col||'#ffdd00';align=align||'left';
+  ctx.save();
+  ctx.font=sz+'px "Press Start 2P"';
+  ctx.textAlign=align;ctx.textBaseline='top';
+  if(glow){ctx.shadowColor=glow;ctx.shadowBlur=10;}
+  ctx.fillStyle='rgba(0,0,0,0.8)';ctx.fillText(txt,x+2,y+2);
+  ctx.shadowBlur=0;
+  if(glow){ctx.shadowColor=glow;ctx.shadowBlur=8;}
+  ctx.fillStyle=col;ctx.fillText(txt,x,y);
+  ctx.restore();
+}
+
+function spawnParticles(x,y,color,n,opts){
+  n=n||8;opts=opts||{};
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2;
+    const s=rand(opts.sMin||1.5,opts.sMax||4.5);
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-(opts.yBias||2),
+      life:opts.life||35,max:opts.life||35,color,size:rand(opts.sz||3,opts.szMax||7)});
+  }
+}
+
+// ── BUILD LEVEL ────────────────────────────────────────────
+function buildLevel(){
+  levelCfg=getLevelConfig(level);
+  palette=LEVEL_PALETTES[Math.min(level-1,9)];
+  item=pickItem();
+  levelWidth=levelCfg.length;
+  goalX=levelWidth-280;
+  worldX=0;caughtFlash=0;clearTimer=0;frameCount=0;
+  bullets=[];particles=[];alertBubbles=[];
+  guardsEverPuddled=new Set();turretsEverPuddled=new Set();levelBonuses={};
+
+  player={
+    x:100,y:FLOOR-32,w:22,h:32,
+    vx:0,vy:0,onGround:false,ducking:false,hidden:false,
+    facing:1,blinkT:0,walkT:0,jumpHeld:false,jumpFrames:0,
+    invincible:0,  // frames of invincibility remaining after thong absorbs a hit
+    hasThong:false,  // wearing thong on head
+  };
+
+  // Platforms — tier-chained so every platform is reachable from its neighbors,
+  // every platform has at least one neighbour within jump range, and every
+  // platform is accessible from the ground at some point along the level.
+  // Max held-jump range: ~172 px horizontal, ~175 px vertical.
+  // Tiers are 58 px apart so ±1 tier between neighbours is always jumpable.
+  // Tiers 0 (96px) and 1 (154px) are within jump height from the floor.
+  platforms=[];
+  const np=levelCfg.platformCount;
+  const sp=(levelWidth-500)/np;
+  const TIER_Y=[FLOOR-96,FLOOR-154,FLOOR-212,FLOOR-265];
+  const MAX_EDGE_GAP=140; // safe horizontal jump limit (px, edge-to-edge)
+  let curTier=Math.floor(Math.random()*2); // start on tier 0 or 1
+  for(let i=0;i<np;i++){
+    const px=380+i*sp+rand(-sp*.08,sp*.08); // tighter jitter prevents big gaps
+    const minT=Math.max(0,curTier-1);
+    const maxT=Math.min(3,curTier+1);
+    curTier=minT+Math.floor(Math.random()*(maxT-minT+1));
+    const pw=rand(80,curTier===0?160:130);
+    platforms.push({x:px,y:TIER_Y[curTier],w:pw,h:12});
+  }
+  platforms.sort((a,b)=>a.x-b.x);
+  // Bridge pass: insert a stepping-stone wherever the horizontal gap is too large
+  for(let i=1;i<platforms.length;i++){
+    const prev=platforms[i-1],cur=platforms[i];
+    const gap=cur.x-(prev.x+prev.w);
+    if(gap>MAX_EDGE_GAP){
+      const prevT=TIER_Y.indexOf(prev.y), curT=TIER_Y.indexOf(cur.y);
+      const bridgeT=Math.round((prevT+curT)/2);
+      const bridgeX=prev.x+prev.w+Math.floor(gap/2)-45;
+      platforms.splice(i,0,{x:bridgeX,y:TIER_Y[bridgeT],w:90,h:12});
+      i++; // skip past the bridge we just inserted
+    }
+  }
+  // No platforms within one jump-reach of the finish line — player must cross on the ground
+  platforms=platforms.filter(p=>p.x+p.w<=goalX-MAX_EDGE_GAP);
+
+  // Second bridge pass — filter may have removed a platform and opened a gap
+  for(let i=1;i<platforms.length;i++){
+    const prev=platforms[i-1],cur=platforms[i];
+    const gap=cur.x-(prev.x+prev.w);
+    if(gap>MAX_EDGE_GAP){
+      const prevT=TIER_Y.indexOf(prev.y),curT=TIER_Y.indexOf(cur.y);
+      const bridgeT=Math.round((prevT+curT)/2);
+      const bridgeX=prev.x+prev.w+Math.floor(gap/2)-45;
+      platforms.splice(i,0,{x:bridgeX,y:TIER_Y[bridgeT],w:90,h:12});
+      i++;
+    }
+  }
+
+  // Ground-entry pass — every platform must be accessible from the ground.
+  // TIER_Y[0] (96px) and TIER_Y[1] (154px) are both within the ~175px jump height,
+  // so they count as "ground accessible". Any stretch > 350px with only tier 2/3
+  // platforms would strand the player after a fall; insert a tier-1 stepping stone.
+  {
+    const inserts=[];
+    let lastGroundX=0; // right edge of the most recent tier-0/1 platform seen
+    for(const pl of platforms){
+      if(pl.y>=TIER_Y[1]){lastGroundX=pl.x+pl.w;continue;} // tier 0 or 1
+      if(pl.x-lastGroundX>350){
+        // Add a tier-1 entry platform just before this high-tier platform
+        const ex=Math.max(lastGroundX+20,pl.x-120);
+        inserts.push({x:ex,y:TIER_Y[1],w:90,h:12});
+        lastGroundX=ex+90;
+      }
+    }
+    if(inserts.length){
+      platforms.push(...inserts);
+      platforms.sort((a,b)=>a.x-b.x);
+      // Final bridge pass after insertions
+      for(let i=1;i<platforms.length;i++){
+        const prev=platforms[i-1],cur=platforms[i];
+        const gap=cur.x-(prev.x+prev.w);
+        if(gap>MAX_EDGE_GAP){
+          const prevT=TIER_Y.indexOf(prev.y),curT=TIER_Y.indexOf(cur.y);
+          const bridgeT=Math.round((prevT+curT)/2);
+          const bridgeX=prev.x+prev.w+Math.floor(gap/2)-45;
+          platforms.splice(i,0,{x:bridgeX,y:TIER_Y[bridgeT],w:90,h:12});
+          i++;
+        }
+      }
+    }
+  }
+
+  // Hidespots — fewer at higher levels
+  hidespots=[];
+  const nh=levelCfg.hidespotCount;
+  const hsp=(levelWidth-300)/nh;
+  for(let i=0;i<nh;i++){
+    hidespots.push({x:250+i*hsp+rand(-40,40),y:FLOOR-42,w:38,h:42});
+  }
+
+  // Guards
+  guards=[];
+  const ng=levelCfg.guardCount;
+  const gsp=(levelWidth-480)/ng;
+  for(let i=0;i<ng;i++){
+    const gx=380+i*gsp+rand(-gsp*.15,gsp*.15);
+    const rng=100+level*18;
+    let gy=FLOOR-38,platRef=null;
+    if(i%3===2){
+      const near=platforms.find(pl=>Math.abs(pl.x-gx)<180);
+      if(near){gy=near.y-38;platRef=near;}
+    }
+    let pMin=platRef?platRef.x:gx-rng;
+    let pMax=platRef?platRef.x+platRef.w-20:gx+rng;
+    if(pMin>pMax){const tmp=pMin;pMin=pMax;pMax=tmp;} // swap if platform too narrow
+    const sx=platRef?clamp(gx,pMin,pMax):gx;
+    const shoots=levelCfg.hasShooters&&Math.random()<levelCfg.shootingGuardRatio;
+    guards.push({
+      x:sx,y:gy,w:20,h:38,
+      dir:i%2===0?1:-1,
+      speed:levelCfg.guardSpeed,
+      patrol:{min:pMin,max:pMax,floor:platRef?platRef.y:FLOOR},
+      platRef,state:'patrol',alertT:0,blinkT:0,walkT:0,
+      shootCooldown:0,canShoot:shoots,
+      hp:5,
+    });
+  }
+
+  // Turrets — wall-mounted at varied heights on the brick walls
+  turrets=[];
+  const nt=levelCfg.turretCount;
+  const tsp=(levelWidth-600)/nt;
+  // Wall mount heights: low (near floor), mid, high (near ceiling)
+  const wallHeights=[FLOOR-55, FLOOR-110, FLOOR-170, FLOOR-220];
+  for(let i=0;i<nt;i++){
+    const tx=480+i*tsp+rand(-tsp*.12,tsp*.12);
+    const dir=i%2===0?1:-1;
+    // Pick a wall height — vary by position so they're not all at the same level
+    const heightIdx=(i*3+Math.floor(rand(0,2)))%wallHeights.length;
+    const ty=wallHeights[heightIdx];
+    turrets.push({
+      x:tx,y:ty,w:26,h:24,dir,
+      wallMount:true,
+      state:'idle',detectRange:levelCfg.visionRange,
+      chargeT:0,chargeMax:levelCfg.turretChargeMax,
+      cooldownT:0,cooldownMax:90,
+      burstLeft:0,burstCooldown:0,
+      scanAngle:i*1.3,alertAlpha:0,pulseT:0,
+    });
+  }
+
+  // Heart pickup — one per level, placed near the midpoint
+  const hx=levelWidth/2+rand(-200,200);
+  const hNear=platforms.find(pl=>Math.abs(pl.x+pl.w/2-hx)<200);
+  const hy=hNear?hNear.y-18:FLOOR-18;
+  heartPickup={x:hx,y:hy,w:14,h:14,collected:false,bobT:Math.random()*Math.PI*2};
+
+  // Thong pickups — 2-3 per level, placed on platforms or floor
+  thongPickups=[];
+  const nThongs=2+Math.floor(Math.random()*2);
+  const tpsp=(levelWidth-600)/nThongs;
+  for(let i=0;i<nThongs;i++){
+    const tx=400+i*tpsp+rand(-tpsp*.2,tpsp*.2);
+    // Prefer placing on a platform
+    const near=platforms.find(pl=>Math.abs(pl.x+pl.w/2-tx)<200);
+    const ty=near?near.y-18:FLOOR-18;
+    thongPickups.push({x:tx,y:ty,w:16,h:14,collected:false,bobT:Math.random()*Math.PI*2});
+  }
+
+  // Lickalotapus Coins — 2-4 coins on almost every platform, plus ground every ~220px
+  coins=[];
+  function mkCoin(x,y){coins.push({x,y,collected:false,bobT:Math.random()*Math.PI*2,spin:Math.random()*Math.PI*2});}
+  for(const pl of platforms){
+    if(Math.random()<0.12)continue; // skip ~1 in 8 platforms for variety
+    const n=2+Math.floor(Math.random()*3); // 2-4 coins
+    for(let i=0;i<n;i++) mkCoin(pl.x+6+(i*(pl.w-12)/Math.max(n-1,1)),pl.y-10);
+  }
+  // Ground coins every ~220px
+  for(let gx=400;gx<levelWidth-300;gx+=200+rand(-30,30))mkCoin(gx,FLOOR-10);
+  coinsTotal=coins.length;
+  coinsCollected=0;
+
+  updateHUD();
+}
+
+// ── FLOW ───────────────────────────────────────────────────
+function startGame(){resumeAudio();stopTitleMusic();level=1;lives=3;score=0;state='cutscene';cutsceneT=0;SFX.menuSelect();}
+function startLevel(){lives=Math.max(lives,3);state='playing';buildLevel();startMusic();}
+
+function updateHUD(){
+  document.getElementById('hLives').textContent='❤️'.repeat(Math.max(0,lives));
+  document.getElementById('hItem').textContent=item?item.emoji+' '+item.name:'';
+  document.getElementById('hCoins').textContent=coinsTotal>0?'🪙 '+coinsCollected+'/'+coinsTotal:'';
+  document.getElementById('hScore').textContent=score.toString().padStart(7,'0');
+}
+
+// ── UPDATE ─────────────────────────────────────────────────
+function update(){
+  if(state==='conjugal_cutscene'){
+    conjugalCutsceneT++;
+    if(conjugalCutsceneT>=conjugalCutsceneDur){state='lickgame';}
+    return;
+  }
+  if(state==='lickgame'||state==='lickresult'){updateLickGame();return;}
+  if(state==='respawn'){
+    respawnT++;
+    if(respawnT>=360){
+      player.x=100;player.y=FLOOR-32;player.vx=0;player.vy=0;
+      player.ducking=false;player.h=32;player.jumpHeld=false;player.jumpFrames=MAX_JUMP_FRAMES;
+      worldX=0;caughtFlash=30;
+      for(const g of guards){g.state='patrol';g.shootCooldown=30;g.alertT=0;}
+      for(const t of turrets){if(t.state==='puddle')continue;t.state='idle';t.alertAlpha=0;t.chargeT=0;t.burstLeft=0;}
+      bullets=[];alertBubbles=[];
+      if(audioCtx&&musicGain){const _t=audioCtx.currentTime;musicGain.gain.cancelScheduledValues(_t);musicGain.gain.setValueAtTime(0.18,_t);}
+      state='playing';
+    }
+    return;
+  }
+  if(state!=='playing')return;
+  if(clearTimer>0){clearTimer--;return;}
+
+  const p=player;
+  const LEFT=keys['ArrowLeft']||keys['KeyA'];
+  const RIGHT=keys['ArrowRight']||keys['KeyD'];
+  const JUMP_KEY=keys['ArrowUp']||keys['KeyW']||keys['MouseJump'];
+  const DUCK=keys['ArrowDown']||keys['KeyS']||keys['Space'];
+  const LICK=keys['KeyZ']||keys['KeyX']||keys['MouseLick'];
+
+  // Duck
+  const wasDucking=p.ducking;
+  p.ducking=DUCK&&p.onGround;
+  if(p.ducking&&!wasDucking){p.h=18;p.y+=14;}
+  if(!p.ducking&&wasDucking){p.h=32;p.y-=14;}
+
+  // Tongue auto-fire while held
+  if(LICK&&tongue.phase==='idle'&&tongue.cd<=0)fireTongue();
+
+  // Move
+  const spd=p.ducking?0.75:1.7;
+  if(LEFT){p.vx=-spd;p.facing=-1;}
+  else if(RIGHT){p.vx=spd;p.facing=1;}
+  else{p.vx*=0.75;}
+  if(!p.ducking&&(LEFT||RIGHT)){p.walkT++;if(p.onGround&&p.walkT%14===0)SFX.walk();}else if(p.onGround)p.walkT=0;
+
+  // Short jump from crouch
+  if(JUMP_KEY&&p.onGround&&p.ducking&&!p.jumpHeld){
+    p.ducking=false;p.h=32;p.y-=14;
+    p.vy=SHORT_JUMP_V;p.onGround=false;p.jumpHeld=true;p.jumpFrames=MAX_JUMP_FRAMES;SFX.jump();
+  }
+  // Variable jump
+  if(JUMP_KEY&&p.onGround&&!p.ducking&&!p.jumpHeld){
+    p.vy=JUMP_V;p.onGround=false;p.jumpHeld=true;p.jumpFrames=0;SFX.jump();
+  }
+  if(JUMP_KEY&&p.jumpHeld&&!p.onGround&&p.jumpFrames<MAX_JUMP_FRAMES){
+    p.vy-=JUMP_BOOST;p.jumpFrames++;
+  }
+  if(!JUMP_KEY){p.jumpHeld=false;p.jumpFrames=MAX_JUMP_FRAMES;}
+
+  // Gravity
+  const grav=(p.vy>0||!JUMP_KEY)?FALL_GRAVITY:GRAVITY;
+  p.vy+=grav;if(p.vy>16)p.vy=16;
+  p.y+=p.vy;p.x+=p.vx;
+
+  // Camera scroll — bidirectional
+  const mid=W*.38;
+  if(p.x>mid){worldX+=p.x-mid;p.x=mid;}
+  else if(p.x<mid&&worldX>0){worldX+=p.x-mid;p.x=mid;}
+  if(worldX<0){p.x-=worldX;worldX=0;}
+  if(p.x<0)p.x=0;
+
+  // Floor
+  p.onGround=false;
+  if(p.y+p.h>=FLOOR){p.y=FLOOR-p.h;p.vy=0;p.onGround=true;p.jumpHeld=false;p.jumpFrames=MAX_JUMP_FRAMES;}
+
+  // Platforms
+  for(const pl of platforms){
+    const sx=pl.x-worldX;
+    if(p.x+p.w>sx&&p.x<sx+pl.w&&p.vy>=0&&p.y+p.h>=pl.y&&p.y+p.h<=pl.y+16){
+      p.y=pl.y-p.h;p.vy=0;p.onGround=true;p.jumpHeld=false;p.jumpFrames=MAX_JUMP_FRAMES;
+    }
+  }
+
+  // Hidden?
+  const wasHidden=p.hidden;
+  p.hidden=false;
+  for(const hs of hidespots){
+    const sx=hs.x-worldX;
+    if(p.ducking&&overlaps(p,{x:sx,y:hs.y,w:hs.w,h:hs.h})){p.hidden=true;break;}
+  }
+  if(p.hidden&&!wasHidden)SFX.hide();
+  p.blinkT=(p.blinkT+1)%60;
+  if(p.invincible>0)p.invincible--;
+
+  // Guards
+  for(const g of guards){
+    if(g.state==='puddle')continue;
+    g.blinkT=(g.blinkT+1)%60;
+    if(g.shootCooldown>0)g.shootCooldown--;
+    const gsx=g.x-worldX;
+    const dist=Math.abs(p.x-(gsx+g.w/2));
+    const sameFloor=Math.abs((p.y+p.h)-(g.y+g.h))<100;
+    const facing=g.dir>0?(p.x>gsx):(p.x<gsx+g.w);
+    const canSee=!godMode&&!p.hidden&&sameFloor&&facing&&dist<levelCfg.visionRange;
+
+    if(canSee){
+      if(g.state==='patrol'){g.state='alert';g.alertT=50;alertBubbles.push({wx:g.x,wy:g.y+g.h,t:65,max:65,text:'!'});SFX.alert();}
+      else if(g.state==='alert'){g.alertT--;if(g.alertT<=0)g.state='chase';}
+      else{
+        const pWX=p.x+worldX;
+        if(pWX>g.x+g.w/2)g.x+=g.speed*2.0;else g.x-=g.speed*2.0;
+        g.dir=(pWX>g.x)?1:-1;
+        g.x=clamp(g.x,g.patrol.min,g.patrol.max);
+        g.walkT=(g.walkT||0)+1;
+        alertBubbles.push({wx:g.x,wy:g.y+g.h,t:5,max:5,text:'!!'});
+        if(g.canShoot&&g.shootCooldown<=0){
+          const bspd=levelCfg.bulletSpeed;
+          bullets.push({x:g.x+(g.dir>0?g.w:0),y:g.y+14,vx:g.dir*bspd,vy:0,w:8,h:4,life:120});
+          g.shootCooldown=levelCfg.guardShootCD;SFX.shoot();
+          spawnParticles(g.x-worldX+(g.dir>0?g.w+4:-4),g.y+14,T.bulletColor,4,{sMin:.5,sMax:2,life:15});
+        }
+      }
+    } else {
+      if(g.state!=='patrol'){alertBubbles.push({wx:g.x,wy:g.y+g.h,t:50,max:50,text:'?'});g.state='patrol';}
+      g.x+=g.dir*g.speed;
+      if(g.x>g.patrol.max){g.x=g.patrol.max;g.dir=-1;}
+      if(g.x<g.patrol.min){g.x=g.patrol.min;g.dir=1;}
+      g.walkT=(g.walkT||0)+1;
+    }
+    if(!godMode&&!p.hidden&&p.invincible<=0&&overlaps(p,{x:gsx,y:g.y,w:g.w,h:g.h})){doCaught();return;}
+  }
+
+  // Turrets
+  for(const t of turrets){
+    const tsx=t.x-worldX;
+    const pCX=p.x+p.w/2,pCY=p.y+p.h/2;
+    const tCX=tsx+t.w/2,tCY=t.y+t.h/2;
+    const dx=pCX-tCX,dy=pCY-tCY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const inFront=t.dir>0?(dx>0):(dx<0);
+    const detected=!p.hidden&&dist<t.detectRange&&inFront;
+    t.scanAngle+=0.025;t.pulseT++;
+
+    if(t.state==='idle'){
+      t.alertAlpha=Math.max(0,t.alertAlpha-.04);
+      if(detected){t.state='detecting';t.chargeT=0;}
+    } else if(t.state==='detecting'){
+      t.alertAlpha=Math.min(1,t.alertAlpha+.07);
+      if(!detected)t.state='idle';
+      else{t.chargeT++;if(t.chargeT>=t.chargeMax){t.state='charging';t.chargeT=0;}}
+    } else if(t.state==='charging'){
+      t.alertAlpha=1;t.chargeT++;
+      if(t.chargeT>=20){t.state='firing';t.burstLeft=levelCfg.turretBurst;t.burstCooldown=0;}
+    } else if(t.state==='firing'){
+      t.burstCooldown--;
+      if(t.burstCooldown<=0&&t.burstLeft>0){
+        const angle=Math.atan2(dy,dx)+rand(-.1,.1);
+        const spd=levelCfg.bulletSpeed;
+        bullets.push({x:t.x+(t.dir>0?t.w+13:-12),y:t.y+t.h/2,
+          vx:Math.cos(angle)*spd,vy:Math.sin(angle)*spd,w:7,h:4,life:100,fromTurret:true});
+        spawnParticles(t.x-worldX+(t.dir>0?t.w+4:-4),t.y+t.h/2,T.bulletColor,4,{sMin:.5,sMax:2,life:15});
+        t.burstLeft--;t.burstCooldown=10;SFX.shoot();
+      }
+      if(t.burstLeft<=0&&t.burstCooldown<=0){t.state='cooldown';t.cooldownT=t.cooldownMax;}
+    } else if(t.state==='cooldown'){
+      t.alertAlpha=Math.max(0,t.alertAlpha-.025);t.cooldownT--;
+      if(t.cooldownT<=0)t.state='idle';
+      // Only allow re-detection once the stun window has elapsed;
+      // tongue-stuns set cooldownT > cooldownMax so this blocks early re-trigger.
+      if(detected&&t.cooldownT<=t.cooldownMax){t.state='detecting';t.chargeT=0;}
+    }
+  }
+
+  // Bullets
+  for(const b of bullets){
+    b.x+=b.vx;b.vy+=0.1;b.y+=b.vy;b.life--;
+    const bsx=b.x-worldX;
+    if(!godMode&&!p.hidden&&p.invincible<=0&&overlaps(p,{x:bsx,y:b.y,w:b.w,h:b.h})){
+      spawnParticles(p.x+p.w/2,p.y+p.h/2,'#ff4444',14);
+      b.life=0;doCaught();return;
+    }
+  }
+  bullets=bullets.filter(b=>b.life>0&&b.x-worldX>-60&&b.x-worldX<W+60);
+
+  // ── Thong pickup collision ──
+  if(!player.hasThong){
+    for(const tp of thongPickups){
+      if(!tp.collected&&overlaps(player,{x:tp.x-worldX,y:tp.y,w:tp.w,h:tp.h})){
+        tp.collected=true;
+        player.hasThong=true;
+        spawnParticles(tp.x-worldX+8,tp.y,'#ff88cc',12,{sMin:2,sMax:5,yBias:3,life:30});SFX.pickup();
+      }
+    }
+  }
+
+  // ── Heart pickup collision ──
+  if(heartPickup&&!heartPickup.collected&&overlaps(player,{x:heartPickup.x-worldX,y:heartPickup.y,w:heartPickup.w,h:heartPickup.h})){
+    heartPickup.collected=true;
+    lives=Math.min(lives+1,5);
+    spawnParticles(heartPickup.x-worldX+7,heartPickup.y,'#ff4466',16,{sMin:2,sMax:5,yBias:3,life:35});
+    SFX.extraLife();
+    updateHUD();
+  }
+
+  // ── Coin collision ──
+  for(const c of coins){
+    if(c.collected)continue;
+    if(overlaps(player,{x:c.x-worldX,y:c.y,w:10,h:10})){
+      c.collected=true;
+      coinsCollected++;
+      score+=100;
+      spawnParticles(c.x-worldX+5,c.y,'#ffd700',8,{sMin:1,sMax:3,yBias:2,life:22});
+      SFX.coin();
+      updateHUD();
+    }
+  }
+
+  // Goal?
+  const gsx=goalX-worldX;
+  if(p.x+p.w>=gsx&&p.x<gsx+60)doLevelClear();
+
+  // Particles
+  for(const pt of particles){pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=0.15;pt.life--;}
+  particles=particles.filter(pt=>pt.life>0&&pt.x>-100&&pt.x<W+100);
+  alertBubbles=alertBubbles.filter(b=>{b.t--;return b.t>0;});
+  if(caughtFlash>0)caughtFlash--;
+  updateTongue();
+  updateHUD();
+}
+
+function doCaught(){
+  if(player.hasThong){
+    // Thong absorbs the hit — lose the thong but not a life
+    player.hasThong=false;
+    player.invincible=180; // ~3s grace period so player can clear the danger zone
+    spawnParticles(player.x+player.w/2,player.y,'#ff88cc',28,{sMin:3,sMax:8,yBias:3,sz:3,szMax:8,life:50});
+    SFX.thongShield();
+    caughtFlash=40;
+    return;
+  }
+  lives--;
+  spawnParticles(player.x+player.w/2,player.y+player.h/2,'#ff4444',20,{sMin:2,sMax:6,yBias:3,sz:4,szMax:9,life:45});
+  bustIsGameOver=(lives<=0);
+  state='bust_cutscene';bustCutsceneT=0;
+  {const pool=slimeMode?(bustIsGameOver?BUST_TAUNTS.overSlime:BUST_TAUNTS.regSlime):(bustIsGameOver?BUST_TAUNTS.over:BUST_TAUNTS.reg);bustTaunt=pool[Math.floor(Math.random()*pool.length)];}
+  if(bustIsGameOver){
+    stopMusic();
+    if(audioCtx&&musicGain){const _t=audioCtx.currentTime;musicGain.gain.cancelScheduledValues(_t);musicGain.gain.setValueAtTime(0.18,_t);}
+    SFX.death();
+  } else {
+    SFX.caught();
+    if(audioCtx&&musicGain&&musicPlaying){const _t=audioCtx.currentTime;musicGain.gain.cancelScheduledValues(_t);musicGain.gain.setValueAtTime(musicGain.gain.value,_t);musicGain.gain.linearRampToValueAtTime(0,_t+9);}
+  }
+  updateHUD();
+}
+
+function doLevelClear(){
+  if(clearTimer>0)return;
+  const pts=300+level*80;score+=pts;
+  const bGuards=guardsEverPuddled.size===guards.length?1000:0;
+  const bTurrets=turretsEverPuddled.size===turrets.length?1000:0;
+  const bCoins=coinsTotal>0&&coinsCollected>=coinsTotal?500:0;
+  levelBonuses={guards:bGuards,turrets:bTurrets,coins:bCoins};
+  score+=bGuards+bTurrets+bCoins;
+  spawnParticles(player.x+player.w/2,player.y,T.accent,28,{sMin:2,sMax:7,yBias:4,sz:4,szMax:10,life:55});
+  clearTimer=9999;SFX.levelClear();stopMusic();
+  // Staggered bonus award sounds
+  setTimeout(()=>{if(bGuards)SFX.bonusAwarded();else SFX.bonusMissed();},800);
+  setTimeout(()=>{if(bTurrets)SFX.bonusAwarded();else SFX.bonusMissed();},1200);
+  setTimeout(()=>{if(bCoins)SFX.bonusAwarded();else SFX.bonusMissed();},1600);
+  setTimeout(()=>{
+    startLickGame(level+1);
+  },2500);
+}
+
+// ── TONGUE WEAPON ─────────────────────────────────────────
+function fireTongue(){
+  if(tongue.phase!=='idle')return;
+  tongue.phase='out';
+  tongue.dir=player.facing;
+  tongue.x=player.x+(player.facing>0?player.w:0);
+  tongue.y=player.y+(player.ducking?8:14);
+  tongue.len=0;
+  tongue.maxLen=(55+level*4)*(player.hasThong?1.6:1);
+  tongue.hitGuard=null;
+  SFX.lick();
+}
+
+function updateTongue(){
+  if(tongue.cd>0)tongue.cd--;
+  if(tongue.phase==='idle')return;
+  const speed=14;
+  if(tongue.phase==='out'){
+    tongue.len+=speed;
+    if(tongue.len>=tongue.maxLen)tongue.phase='retract';
+    // Check tongue tip vs guards & turrets
+    const tipX=(player.x+(player.facing>0?player.w:0))+tongue.dir*tongue.len;
+    const tipY=player.y+(player.ducking?8:14);
+    for(const g of guards){
+      const gsx=g.x-worldX;
+      if(tipX>gsx&&tipX<gsx+g.w&&tipY>g.y&&tipY<g.y+g.h&&tongue.hitGuard!==g){
+        tongue.hitGuard=g;
+        if(player.hasThong||(g.hp||1)-1<=0){
+          // Thong power or last hit — melt into puddle
+          g.state='puddle';g.alertT=0;g.hp=0;guardsEverPuddled.add(g);
+          spawnParticles(gsx+g.w/2,g.y+g.h/2,'#55ddff',28,{sMin:2,sMax:6,yBias:1,life:45});
+          score+=200;updateHUD();SFX.lickHit();
+        } else {
+          // Stun guard, show remaining hp
+          g.hp=(g.hp||1)-1;
+          g.state='patrol';g.alertT=0;
+          spawnParticles(gsx+g.w/2,g.y+g.h/2,'#ff6688',14,{sMin:2,sMax:5,yBias:3,life:30});
+          score+=50;updateHUD();SFX.lickHit();
+        }
+        tongue.phase='retract';
+      }
+    }
+    // Check tongue tip vs turrets
+    for(const t of turrets){
+      if(t.state==='puddle')continue;
+      const tsx=t.x-worldX;
+      if(tipX>tsx&&tipX<tsx+t.w&&tipY>t.y&&tipY<t.y+t.h){
+        if(player.hasThong){
+          // Thong power — destroy turret for the round
+          t.state='puddle';t.chargeT=0;t.burstLeft=0;t.alertAlpha=0;turretsEverPuddled.add(t);
+          spawnParticles(tsx+t.w/2,t.y+t.h/2,'#ffaa00',28,{sMin:2,sMax:7,yBias:1,life:45});
+          score+=200;updateHUD();SFX.lickHit();
+        } else {
+          // Normal stun — long offline period; cooldownT > cooldownMax blocks re-detection
+          t.state='cooldown';t.cooldownT=t.cooldownMax*5;t.chargeT=0;t.burstLeft=0;t.alertAlpha=0;
+          spawnParticles(tsx+t.w/2,t.y+t.h/2,'#ffaa00',14,{sMin:2,sMax:5,yBias:2,life:30});
+          score+=50;updateHUD();SFX.lickHit();
+        }
+        tongue.phase='retract';
+      }
+    }
+    // Check tongue tip vs coins
+    for(const c of coins){
+      if(c.collected)continue;
+      const cx=c.x-worldX;
+      if(tipX>cx-6&&tipX<cx+16&&tipY>c.y-6&&tipY<c.y+16){
+        c.collected=true;
+        coinsCollected++;
+        score+=100;
+        spawnParticles(cx+5,c.y,'#ffd700',8,{sMin:1,sMax:3,yBias:2,life:22});
+        SFX.coin();
+        updateHUD();
+      }
+    }
+    // Check tongue tip vs thong pickups
+    if(!player.hasThong){
+      for(const tp of thongPickups){
+        if(tp.collected)continue;
+        const tx=tp.x-worldX;
+        if(tipX>tx-6&&tipX<tx+tp.w+6&&tipY>tp.y-6&&tipY<tp.y+tp.h+6){
+          tp.collected=true;
+          player.hasThong=true;
+          spawnParticles(tx+8,tp.y,'#ff88cc',12,{sMin:2,sMax:5,yBias:3,life:30});
+          SFX.pickup();
+        }
+      }
+    }
+    // Check tongue tip vs heart pickup
+    if(heartPickup&&!heartPickup.collected){
+      const hx=heartPickup.x-worldX;
+      if(tipX>hx-6&&tipX<hx+heartPickup.w+6&&tipY>heartPickup.y-6&&tipY<heartPickup.y+heartPickup.h+6){
+        heartPickup.collected=true;
+        lives=Math.min(lives+1,5);
+        spawnParticles(hx+7,heartPickup.y,'#ff4466',16,{sMin:2,sMax:5,yBias:3,life:35});
+        SFX.extraLife();
+        updateHUD();
+      }
+    }
+  } else if(tongue.phase==='retract'){
+    tongue.len-=speed*1.4;
+    if(tongue.len<=0){tongue.len=0;tongue.phase='idle';tongue.cd=20;}
+  }
+}
+
+// ── LICK MINIGAME ──────────────────────────────────────────
+function startLickGame(nextLevel){
+  lickGame.active=true;lickGame.count=0;lickGame.timeLeft=600; // 10s @ 60fps
+  lickGame.pendingLevel=nextLevel;
+  lickGame.lastScore=0;
+  lickGame.thongOff=false;lickGame.thongFallT=0;lickGame.tongueFrame=99;
+  if(nextLevel===6){wardenCutsceneT=0;state='warden_cutscene';return;}
+  conjugalCutsceneT=0;
+  state='conjugal_cutscene';
+}
+
+function lickTap(){
+  if(state!=='lickgame')return;
+  lickGame.count++;
+  lickGame.tongueFrame=0;
+  spawnParticles(W/2+Math.random()*60-30,H/2+20,'#ff6688',6,{sMin:2,sMax:5,yBias:4,life:20});
+  SFX.lickTap();
+}
+
+function updateLickGame(){
+  if(state!=='lickgame')return;
+  lickGame.timeLeft--;
+  if(lickGame.tongueFrame!==undefined) lickGame.tongueFrame++;
+  // Early win — thong falls off at 60 licks!
+  if(lickGame.count>=69&&!lickGame.thongOff){
+    lickGame.thongOff=true;
+    lickGame.thongFallT=0;
+    spawnParticles(W/2+120,H/2+60,'#f090b0',30,{sMin:3,sMax:8,yBias:6,life:45});
+    SFX.thongOff();
+  }
+  if(lickGame.thongOff) lickGame.thongFallT=(lickGame.thongFallT||0)+1;
+  // End after fall animation (40 frames) or timer runs out
+  const done=lickGame.timeLeft<=0||(lickGame.thongOff&&lickGame.thongFallT>60);
+  if(done){
+    lickGame.active=false;
+    lickGame.lastScore=lickGame.count;
+    if(lickGame.count>lickGame.best)lickGame.best=lickGame.count;
+    const bonus=lickGame.count*20+(lickGame.thongOff?500:0);
+    score+=bonus;
+    const nxt=lickGame.pendingLevel;
+    setTimeout(()=>{
+      level=nxt;
+      if(level>10){state='win_cutscene';winCutsceneT=0;SFX.win();updateHUD();}
+      else{ startLevel(); }
+    },2200);
+    state='lickresult';
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  DRAWING
+// ═══════════════════════════════════════════════════════════
+
+// ── BACKGROUND ─────────────────────────────────────────────
+function drawSky(){
+  const rows=palette.sky||['#07080f','#0d1020'];
+  const g=ctx.createLinearGradient(0,0,0,FLOOR);
+  g.addColorStop(0,rows[0]);g.addColorStop(1,rows[1]||rows[0]);
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,FLOOR);
+
+  // Parallax stars / spores
+  ctx.fillStyle=T.starColor;
+  for(let i=0;i<50;i++){
+    const sx=((i*173+worldX*.03)%(W+40))-20;
+    const sy=(i*67)%(FLOOR-50);
+    const ss=i%5===0?2:1;
+    const twinkle=(Math.sin(frameCount*.05+i)*.5+.5);
+    ctx.globalAlpha=twinkle*(i%3===0?.9:.5);
+    ctx.fillRect(sx,sy,ss,ss);
+  }
+  ctx.globalAlpha=1;
+
+  // Atmospheric fog layer near floor
+  const fog=ctx.createLinearGradient(0,FLOOR-60,0,FLOOR);
+  fog.addColorStop(0,'transparent');fog.addColorStop(1,T.fogColor);
+  ctx.fillStyle=fog;ctx.fillRect(0,FLOOR-60,W,60);
+}
+
+function drawBricks(){
+  const bW=56,bH=18;
+  const pa=palette.brickA||T.brickA||'#2e2e2e';
+  const pb=palette.brickB||'#242424';
+  const offX=worldX%(bW*2);
+  for(let row=0;row*bH<FLOOR;row++){
+    const shift=row%2===0?0:bW;
+    for(let col=-1;col<W/bW+2;col++){
+      const bx=col*bW*2+shift-offX,by=row*bH;
+      // Main brick
+      ctx.fillStyle=row%2===0?pa:pb;
+      ctx.fillRect(bx+1,by+1,bW*2-2,bH-2);
+      // Highlight on top-left
+      ctx.fillStyle='rgba(255,255,255,0.04)';
+      ctx.fillRect(bx+1,by+1,bW*2-2,2);
+      ctx.fillRect(bx+1,by+1,2,bH-2);
+      // Shadow on bottom-right
+      ctx.fillStyle='rgba(0,0,0,0.3)';
+      ctx.fillRect(bx+1,by+bH-2,bW*2-2,1);
+    }
+  }
+}
+
+function drawCeiling(){
+  ctx.fillStyle=T.ceilColor;ctx.fillRect(0,0,W,22);
+  // Ceiling shadow gradient
+  const cg=ctx.createLinearGradient(0,22,0,38);
+  cg.addColorStop(0,'rgba(0,0,0,0.6)');cg.addColorStop(1,'transparent');
+  ctx.fillStyle=cg;ctx.fillRect(0,22,W,16);
+
+  if(slimeMode){
+    // Dripping slime stalactites
+    ctx.fillStyle=T.barColor;
+    for(let i=0;i<12;i++){
+      const ox=(i*91-(worldX*.05)%(91*12)+W*2)%(W+91*2)-91;
+      const dLen=10+Math.sin(ox*.1+frameCount*.02)*7;
+      // Stalactite body
+      ctx.beginPath();
+      ctx.moveTo(ox-6,22);ctx.lineTo(ox+6,22);
+      ctx.lineTo(ox+3,22+dLen);ctx.lineTo(ox-3,22+dLen);
+      ctx.closePath();ctx.fill();
+      // Drip drop
+      ctx.beginPath();ctx.arc(ox,22+dLen+5,4,0,Math.PI*2);ctx.fill();
+      // Highlight
+      ctx.fillStyle='rgba(127,255,0,0.15)';
+      ctx.beginPath();ctx.arc(ox-1,22+dLen+4,2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=T.barColor;
+    }
+  } else {
+    // Prison bars with shadow
+    ctx.fillStyle=T.barColor;
+    const spacing=70;const offX=worldX%spacing;
+    for(let x=-offX;x<W;x+=spacing){
+      // Bar shadow
+      ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(x+3,0,8,40);
+      // Bar body
+      ctx.fillStyle=T.barColor;ctx.fillRect(x,0,7,40);
+      // Bar highlight
+      ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(x,0,2,40);
+    }
+    // Horizontal bar at bottom of ceiling
+    ctx.fillStyle=T.barColor;ctx.fillRect(0,20,W,4);
+    ctx.fillStyle='rgba(255,255,255,0.06)';ctx.fillRect(0,20,W,1);
+  }
+}
+
+function drawFloor(){
+  // Multi-layer floor
+  const floorTop=palette.floorTop||T.floorTop||'#3a3a4a';
+  ctx.fillStyle=floorTop;ctx.fillRect(0,FLOOR,W,4);
+  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(0,FLOOR,W,1);
+
+  const fg=ctx.createLinearGradient(0,FLOOR+4,0,H);
+  fg.addColorStop(0,T.floorMid||'#2a2a38');
+  fg.addColorStop(.4,T.floorBot||'#1a1a28');
+  fg.addColorStop(1,'#000');
+  ctx.fillStyle=fg;ctx.fillRect(0,FLOOR+4,W,H-FLOOR-4);
+
+  // Floor tiles
+  const ts=50,offX=worldX%ts;
+  ctx.fillStyle=T.floorLine||'#4a4a5a';
+  for(let x=-offX;x<W;x+=ts){ctx.fillRect(x,FLOOR,1,8);}
+  for(let x=-offX+ts/2;x<W;x+=ts){ctx.fillStyle='rgba(255,255,255,0.03)';ctx.fillRect(x,FLOOR,ts-1,4);}
+
+  // Slime puddles
+  if(slimeMode){
+    for(let i=0;i<8;i++){
+      const px=((i*337-worldX*.8)%(W+120)+W+120)%(W+120)-60;
+      ctx.fillStyle='rgba(0,200,80,0.12)';
+      ctx.beginPath();ctx.ellipse(px,FLOOR+6,24,7,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(127,255,0,0.08)';
+      ctx.beginPath();ctx.ellipse(px-4,FLOOR+5,10,4,0,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
+
+function drawPlatforms(){
+  for(const pl of platforms){
+    const sx=pl.x-worldX;
+    if(sx+pl.w<-4||sx>W+4)continue;
+
+    // Shadow beneath platform
+    ctx.fillStyle='rgba(0,0,0,0.35)';
+    ctx.fillRect(sx+3,pl.y+pl.h,pl.w-2,5);
+
+    // Platform body
+    ctx.fillStyle=T.platBody||'#424855';
+    ctx.fillRect(sx,pl.y+3,pl.w,pl.h-3);
+
+    // Top surface
+    ctx.fillStyle=T.platTop||'#5a6070';
+    ctx.fillRect(sx,pl.y,pl.w,4);
+
+    // Top highlight
+    ctx.fillStyle='rgba(255,255,255,0.12)';
+    ctx.fillRect(sx,pl.y,pl.w,1);
+
+    // Edge detail — left
+    ctx.fillStyle='rgba(255,255,255,0.06)';
+    ctx.fillRect(sx,pl.y,2,pl.h);
+    // Edge detail — right (shadow)
+    ctx.fillStyle='rgba(0,0,0,0.3)';
+    ctx.fillRect(sx+pl.w-2,pl.y,2,pl.h);
+
+    // Rivet studs
+    ctx.fillStyle='rgba(0,0,0,0.4)';
+    for(let s=8;s<pl.w-4;s+=18){
+      ctx.fillRect(sx+s,pl.y+4,5,4);
+      ctx.fillStyle='rgba(255,255,255,0.1)';
+      ctx.fillRect(sx+s,pl.y+4,2,2);
+      ctx.fillStyle='rgba(0,0,0,0.4)';
+    }
+  }
+}
+
+function drawHidespots(){
+  for(const hs of hidespots){
+    const sx=hs.x-worldX;
+    if(sx+hs.w<-4||sx>W+4)continue;
+
+    if(slimeMode){
+      // Slime vat — cylindrical
+      ctx.fillStyle=T.hsDark||'#071407';
+      ctx.fillRect(sx+2,hs.y+12,hs.w-4,hs.h-12);
+      // Rim shadow
+      ctx.fillStyle='rgba(0,0,0,0.5)';
+      ctx.fillRect(sx,hs.y+8,hs.w,5);
+      // Rim
+      ctx.fillStyle=T.hsRing||'#7fff00';
+      ctx.fillRect(sx,hs.y+6,hs.w,5);
+      ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(sx,hs.y+6,hs.w,1);
+      // Liquid surface
+      ctx.fillStyle=T.hsLid||'#00bb55';
+      ctx.beginPath();ctx.ellipse(sx+hs.w/2,hs.y+6,hs.w/2-1,8,0,0,Math.PI*2);ctx.fill();
+      // Liquid highlight
+      ctx.fillStyle='rgba(127,255,0,0.3)';
+      ctx.beginPath();ctx.ellipse(sx+hs.w/2-5,hs.y+4,hs.w/5,4,0,0,Math.PI*2);ctx.fill();
+      // Bubble
+      const bt=Math.sin(frameCount*.06)*3;
+      ctx.fillStyle='rgba(127,255,0,0.4)';
+      ctx.beginPath();ctx.arc(sx+hs.w/2+4,hs.y+5+bt,3,0,Math.PI*2);ctx.fill();
+      pxt('VAT',sx+5,hs.y+20,5,T.hsRing,null,T.hsRing);
+    } else {
+      // Barrel — wooden cask
+      ctx.fillStyle=T.hsDark||'#2a1a08';
+      ctx.fillRect(sx+3,hs.y+10,hs.w-6,hs.h-10);
+      // Wood planks (subtle)
+      ctx.fillStyle='rgba(255,200,100,0.04)';
+      for(let p2=0;p2<3;p2++)ctx.fillRect(sx+3+p2*((hs.w-6)/3),hs.y+10,(hs.w-6)/3-1,hs.h-10);
+      // Lid top
+      ctx.fillStyle=T.hsLid||'#6a4a1a';
+      ctx.fillRect(sx-1,hs.y+1,hs.w+2,10);
+      ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(sx,hs.y+1,hs.w,2);
+      // Metal rings
+      ctx.fillStyle=T.hsRing||'#8a7060';
+      ctx.fillRect(sx+1,hs.y+16,hs.w-2,3);
+      ctx.fillRect(sx+1,hs.y+28,hs.w-2,3);
+      ctx.fillStyle='rgba(255,255,255,0.15)';
+      ctx.fillRect(sx+1,hs.y+16,hs.w-2,1);
+      ctx.fillRect(sx+1,hs.y+28,hs.w-2,1);
+      // Staves
+      ctx.fillStyle='rgba(0,0,0,0.2)';
+      ctx.fillRect(sx+hs.w/2-1,hs.y+11,2,hs.h-11);
+    }
+  }
+}
+
+function drawGoal(){
+  const sx=goalX-worldX;
+  if(sx>W+20||sx+70<-20)return;
+
+  // Glow column
+  const glow=ctx.createLinearGradient(sx-20,0,sx+80,0);
+  glow.addColorStop(0,'transparent');
+  glow.addColorStop(.3,T.goalGlow||'#ffdd0022');
+  glow.addColorStop(.7,T.goalGlow||'#ffdd0022');
+  glow.addColorStop(1,'transparent');
+  ctx.fillStyle=glow;ctx.fillRect(sx-20,0,100,H);
+
+  const gc=T.goalPost||'#ffdd00';
+  const gb=T.goalBar||'#cc9900';
+
+  // Post shadows
+  ctx.fillStyle='rgba(0,0,0,0.4)';
+  ctx.fillRect(sx+4,FLOOR-122,10,122);
+  ctx.fillRect(sx+54,FLOOR-122,10,122);
+
+  // Posts
+  ctx.fillStyle=gb;
+  ctx.fillRect(sx,FLOOR-124,10,124);
+  ctx.fillRect(sx+50,FLOOR-124,10,124);
+  // Post highlights
+  ctx.fillStyle='rgba(255,255,255,0.25)';
+  ctx.fillRect(sx,FLOOR-124,2,124);
+  ctx.fillRect(sx+50,FLOOR-124,2,124);
+
+  // Crossbar
+  ctx.fillStyle=gb;ctx.fillRect(sx-5,FLOOR-128,70,12);
+  ctx.fillStyle=gc;ctx.fillRect(sx-5,FLOOR-128,70,3);
+  ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(sx-5,FLOOR-128,70,1);
+
+  if(slimeMode){
+    // Oozing drips
+    for(let i=0;i<5;i++){
+      const dLen=15+i*6+Math.sin(frameCount*.04+i)*4;
+      ctx.fillStyle=T.goalPost;
+      ctx.fillRect(sx+8+i*9,FLOOR-116,5,dLen);
+      ctx.beginPath();ctx.arc(sx+10+i*9,FLOOR-116+dLen+5,5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(127,255,0,0.3)';
+      ctx.beginPath();ctx.arc(sx+9+i*9,FLOOR-116+dLen+4,2,0,Math.PI*2);ctx.fill();
+    }
+    // Blob mascot on top
+    ctx.fillStyle=T.goalPost;
+    ctx.beginPath();ctx.arc(sx+30,FLOOR-136,16,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(127,255,0,0.6)';
+    ctx.beginPath();ctx.arc(sx+24,FLOOR-140,6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#000';
+    ctx.fillRect(sx+22,FLOOR-138,3,3);ctx.fillRect(sx+28,FLOOR-138,3,3);
+  } else {
+    // Decorative bars between posts
+    ctx.fillStyle=gb;
+    for(let i=12;i<50;i+=12){
+      ctx.fillRect(sx+i,FLOOR-116,4,116);
+      ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(sx+i,FLOOR-116,1,116);
+      ctx.fillStyle=gb;
+    }
+    // Star on top
+    drawStar(sx+30,FLOOR-142,15,gc);
+    // Animated pulse ring
+    const pScale=.5+Math.sin(frameCount*.06)*.2;
+    ctx.strokeStyle=gc+'66';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(sx+30,FLOOR-142,15+pScale*8,0,Math.PI*2);ctx.stroke();
+  }
+
+  const lines=(slimeMode?'SLIME\nHEADQ':'PRISON\nGATE').split('\n');
+  lines.forEach((ln,i)=>pxt(ln,sx-6,FLOOR-172+i*16,7,T.goalPost,'left',T.goalPost));
+}
+
+function drawStar(cx,cy,r,color){
+  ctx.fillStyle=color;ctx.beginPath();
+  for(let i=0;i<5;i++){
+    const a=(i*4*Math.PI/5)-Math.PI/2;
+    const a2=((i*4+2)*Math.PI/5)-Math.PI/2;
+    const ox=cx+Math.cos(a)*r,oy=cy+Math.sin(a)*r;
+    const ix=cx+Math.cos(a2)*r*.42,iy=cy+Math.sin(a2)*r*.42;
+    i===0?ctx.moveTo(ox,oy):ctx.lineTo(ox,oy);ctx.lineTo(ix,iy);
+  }
+  ctx.closePath();ctx.fill();
+  // Star shine
+  ctx.fillStyle='rgba(255,255,255,0.4)';ctx.beginPath();
+  ctx.arc(cx-3,cy-3,r*.25,0,Math.PI*2);ctx.fill();
+}
+
+// ── GUARD DRAW ─────────────────────────────────────────────
+function drawGuard(g){
+  const x=g.x-worldX;
+  if(x+g.w<-30||x>W+30)return;
+  if(g.state==='puddle'){
+    // Puddle of liquid where the guard melted
+    const px=x+g.w/2, py=g.y+g.h;
+    const puddleColor=slimeMode?'rgba(127,255,0,0.75)':'rgba(60,200,255,0.75)';
+    const puddleShine=slimeMode?'rgba(200,255,100,0.5)':'rgba(160,240,255,0.5)';
+    ctx.save();
+    ctx.translate(px,py);
+    // outer blob
+    ctx.fillStyle=puddleColor;
+    ctx.beginPath();ctx.ellipse(0,-2,g.w*.85,7,0,0,Math.PI*2);ctx.fill();
+    // inner shine
+    ctx.fillStyle=puddleShine;
+    ctx.beginPath();ctx.ellipse(-3,-3,g.w*.4,3,0,0,Math.PI*2);ctx.fill();
+    // hat sticking out of the puddle
+    ctx.fillStyle=T.guardHat;
+    ctx.fillRect(-6,-11,12,6);ctx.fillRect(-4,-17,8,6);
+    ctx.fillStyle=T.guardBadge;ctx.fillRect(-2,-15,4,4);
+    ctx.restore();
+    return;
+  }
+  const d=g.dir,bl=g.blinkT,alerting=g.state!=='patrol';
+  const wt=g.walkT||0;
+  const legOsc=Math.sin(wt*.18)*5;
+
+  // Vision cone
+  if(g.state==='chase'){
+    ctx.fillStyle='rgba(255,50,30,0.12)';
+    ctx.fillRect(d>0?x+g.w:x-150,g.y-15,150,g.h+35);
+  } else if(g.state==='alert'){
+    ctx.fillStyle='rgba(255,160,0,0.08)';
+    ctx.fillRect(d>0?x+g.w:x-110,g.y-8,110,g.h+25);
+  }
+
+  // Drop shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath();ctx.ellipse(x+g.w/2+2,g.y+g.h+1,g.w/2,3,0,0,Math.PI*2);ctx.fill();
+
+  // Legs with walk animation
+  ctx.fillStyle=T.guardLeg;
+  const lLeg=alerting?legOsc:0;
+  const rLeg=alerting?-legOsc:0;
+  ctx.fillRect(x+2,g.y+g.h-14+lLeg,7,14-lLeg);
+  ctx.fillRect(x+g.w-9,g.y+g.h-14+rLeg,7,14-rLeg);
+  // Boot
+  ctx.fillStyle='#111';
+  ctx.fillRect(x+(d>0?g.w-11:2),g.y+g.h-5,9,5);
+
+  // Body — shooter guards wear tactical uniforms distinct from standard guards
+  // Prison: red tactical  |  Slime: toxic yellow-green tactical
+  const bodyDark=g.canShoot?(slimeMode?'#5a8800':'#6b1010'):T.guardBodyDark;
+  const bodyMain=g.canShoot?(slimeMode?'#aadd00':'#922020'):T.guardBody;
+  ctx.fillStyle=bodyDark;
+  ctx.fillRect(x+2,g.y+12,g.w-4,g.h-26);
+  ctx.fillStyle=bodyMain;
+  ctx.fillRect(x+2,g.y+12,g.w-4-2,g.h-26-2);
+
+  // Shooter: shoulder pads (dark armour plates on each side)
+  if(g.canShoot){
+    ctx.fillStyle=slimeMode?'#3a6600':'#4a0808';
+    ctx.fillRect(x-2,g.y+12,6,9);
+    ctx.fillRect(x+g.w-4,g.y+12,6,9);
+    ctx.fillStyle=slimeMode?'rgba(180,255,0,0.3)':'rgba(255,80,80,0.2)';
+    ctx.fillRect(x-2,g.y+12,6,2);
+    ctx.fillRect(x+g.w-4,g.y+12,6,2);
+  }
+
+  // Chest detail / uniform lines
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.fillRect(x+g.w/2-1,g.y+14,2,g.h-28);
+
+  // Belt
+  ctx.fillStyle=T.guardBelt;ctx.fillRect(x+2,g.y+g.h-26,g.w-4,5);
+  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(x+2,g.y+g.h-26,g.w-4,1);
+
+  // Badge — shooter gets a warning diamond instead of standard badge
+  // Prison: red diamond  |  Slime: toxic orange diamond
+  if(g.canShoot){
+    ctx.save();ctx.translate(x+g.w/2,g.y+19);ctx.rotate(Math.PI/4);
+    ctx.fillStyle=slimeMode?'#ff8800':'#ff2222';ctx.fillRect(-3,-3,6,6);
+    ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillRect(-3,-3,3,3);
+    ctx.restore();
+  } else {
+    ctx.fillStyle=T.guardBadge;ctx.fillRect(x+g.w/2-3,g.y+17,6,5);
+    ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fillRect(x+g.w/2-3,g.y+17,3,2);
+  }
+
+  // Head
+  ctx.fillStyle=T.guardHead;
+  ctx.fillRect(x+3,g.y+2,g.w-6,12);
+  // Head shading
+  ctx.fillStyle='rgba(0,0,0,0.15)';
+  ctx.fillRect(x+3,g.y+2,g.w-6,4);
+
+  if(g.canShoot){
+    // Tactical flat-top helmet — covers more of the head, has a visor strip
+    // Prison: dark red  |  Slime: dark toxic olive
+    ctx.fillStyle=slimeMode?'#2a4400':'#3a0808';
+    ctx.fillRect(x,g.y-6,g.w,8);       // wide flat brim
+    ctx.fillRect(x+2,g.y-13,g.w-4,8);  // helmet dome
+    // Visor strip across the front
+    ctx.fillStyle=slimeMode?'#0d2200':'#1a0404';
+    ctx.fillRect(x+2,g.y-6,g.w-4,3);
+    ctx.fillStyle=slimeMode?'rgba(180,255,0,0.4)':'rgba(255,80,80,0.3)';
+    ctx.fillRect(x+2,g.y-6,g.w-4,1);
+    // Helmet top highlight
+    ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(x+2,g.y-13,g.w-4,1);
+    // No hat badge — tactical helmet has none
+  } else {
+    // Standard peaked hat brim
+    ctx.fillStyle=T.guardHat;
+    ctx.fillRect(x,g.y-4,g.w,7);
+    ctx.fillRect(x+3,g.y-10,g.w-6,7);
+    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(x,g.y-4,g.w,1);
+    // Hat badge (star/blob)
+    ctx.fillStyle=T.guardBadge;
+    ctx.fillRect(x+g.w/2-2,g.y-8,4,4);
+  }
+
+  // Eyes — alert = red
+  const eyeCol=alerting?'#ff2244':'#1a1a1a';
+  const eyeX=d>0?x+g.w-7:x+3;
+  ctx.fillStyle=eyeCol;
+  ctx.fillRect(eyeX,g.y+5,3,bl%50<3?1:3);
+  if(alerting){// eye glow
+    ctx.fillStyle='rgba(255,30,60,0.4)';
+    ctx.beginPath();ctx.arc(eyeX+1,g.y+6,5,0,Math.PI*2);ctx.fill();
+  }
+
+  // Slime drip from hat
+  if(slimeMode){
+    ctx.fillStyle='rgba(127,255,0,0.6)';
+    ctx.fillRect(x+6,g.y-10,3,7);
+    ctx.beginPath();ctx.arc(x+7,g.y-3,3,0,Math.PI*2);ctx.fill();
+  }
+
+  // Gun barrel
+  if(g.canShoot){
+    ctx.fillStyle=T.guardGun;
+    const gunX=d>0?x+g.w:x-11;
+    ctx.fillRect(gunX,g.y+13,11,4);
+    // Grip
+    ctx.fillRect(d>0?x+g.w-2:x+2,g.y+17,4,5);
+    // Muzzle flash
+    if(g.shootCooldown>levelCfg.guardShootCD-6){
+      ctx.fillStyle=T.bulletColor+'cc';
+      ctx.beginPath();ctx.arc(d>0?gunX+13:gunX-2,g.y+15,5,0,Math.PI*2);ctx.fill();
+    }
+  }
+  // HP bar — only show after first hit
+  if((g.hp||5)<5){
+    const bw=g.w+2,bh=3,bx=x-1,by=g.y-18;
+    ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#55ddff';ctx.fillRect(bx,by,Math.round(bw*(g.hp/5)),bh);
+  }
+}
+
+// ── PLAYER DRAW ────────────────────────────────────────────
+// ── Draw tongue weapon ─────────────────────────────────────
+function drawTongue(){
+  if(tongue.phase==='idle'||tongue.len<=0)return;
+  const p=player;
+  const originX=p.x+(p.facing>0?p.w+1:0);
+  const originY=p.y+(p.ducking?8:14);
+  const tipX=originX+tongue.dir*tongue.len;
+
+  // Tongue glow
+  ctx.save();
+  ctx.strokeStyle='rgba(255,100,140,0.3)';
+  ctx.lineWidth=8;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(originX,originY);ctx.lineTo(tipX,originY+2);ctx.stroke();
+  // Tongue body — pink
+  ctx.strokeStyle='#e8607a';ctx.lineWidth=5;
+  ctx.beginPath();ctx.moveTo(originX,originY);ctx.lineTo(tipX,originY+2);ctx.stroke();
+  // Tongue highlight
+  ctx.strokeStyle='#ff9aaa';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(originX,originY-1);ctx.lineTo(tipX,originY+1);ctx.stroke();
+  // Tongue tip bulb
+  ctx.fillStyle='#ff6688';
+  ctx.beginPath();ctx.arc(tipX,originY+2,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffaacc';
+  ctx.beginPath();ctx.arc(tipX-1,originY+1,2,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawPlayer(){
+  const p=player;
+  const x=p.x,y=p.y,d=p.facing,duck=p.ducking;
+  if(p.hidden)ctx.globalAlpha=0.2;
+  // Blink rapidly while post-thong invincibility is active
+  if(p.invincible>0&&Math.floor(p.invincible/5)%2===0){ctx.globalAlpha=0.3;}
+
+  const wt=p.walkT;
+  // Lickalotapus body proportions: wide round body, big head
+  const BW=22,BH=duck?14:24; // body width/height
+  const HW=20,HH=18;         // head width/height
+  const legOsc=p.onGround&&!duck?Math.sin(wt*.22)*3:0;
+
+  // Drop shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath();ctx.ellipse(x+BW/2,FLOOR+3,BW/2+2,4,0,0,Math.PI*2);ctx.fill();
+
+  // ── Feet / paws ──
+  const darkPaw='#2a2a38';
+  if(!duck){
+    ctx.fillStyle=darkPaw;
+    // Back foot
+    ctx.fillRect(x+(d>0?1:BW-10),y+BH+HH-8+legOsc,10,7);
+    // Front foot
+    ctx.fillRect(x+(d>0?BW-9:1),y+BH+HH-8-legOsc,10,7);
+    // Toe nubs (3 per foot)
+    for(let i=0;i<3;i++){
+      ctx.fillRect(x+(d>0?1:BW-10)+i*3,(y+BH+HH-8+legOsc)+6,2,2);
+      ctx.fillRect(x+(d>0?BW-9:1)+i*3,(y+BH+HH-8-legOsc)+6,2,2);
+    }
+  } else {
+    ctx.fillStyle=darkPaw;
+    ctx.fillRect(x+1,y+BH+HH-5,BW-2,5);
+    for(let i=0;i<5;i++)ctx.fillRect(x+2+i*4,y+BH+HH-1,2,2);
+  }
+
+  // ── Body — round, brown with tan belly ──
+  const bodyY=y+HH-4;
+  // Body dark outline/shadow
+  ctx.fillStyle='#3d2810';
+  ctx.fillRect(x-1,bodyY+1,BW+2,BH+2);
+  // Main body fur — dark brown
+  ctx.fillStyle='#6b4228';
+  ctx.fillRect(x,bodyY,BW,BH);
+  // Rounded body corners
+  ctx.fillStyle='#3d2810';
+  ctx.fillRect(x,bodyY,2,2);ctx.fillRect(x+BW-2,bodyY,2,2);
+  ctx.fillRect(x,bodyY+BH-2,2,2);ctx.fillRect(x+BW-2,bodyY+BH-2,2,2);
+  // Tan belly
+  ctx.fillStyle='#c8a07a';
+  ctx.fillRect(x+5,bodyY+4,BW-10,BH-5);
+  // Belly rounding
+  ctx.fillStyle='#6b4228';
+  ctx.fillRect(x+5,bodyY+4,1,1);ctx.fillRect(x+BW-6,bodyY+4,1,1);
+  // Belly sheen
+  ctx.fillStyle='rgba(255,220,180,0.2)';
+  ctx.fillRect(x+6,bodyY+5,4,BH-8);
+  // Fur texture marks
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  ctx.fillRect(x+2,bodyY+3,1,3);ctx.fillRect(x+BW-3,bodyY+5,1,3);
+  ctx.fillRect(x+4,bodyY+BH-5,1,2);
+
+  // ── Stubby arms ──
+  ctx.fillStyle='#3d2810';
+  const armY=bodyY+4;
+  if(d>0){// right-facing: left arm back, right arm front
+    ctx.fillRect(x-4,armY,7,6);// left (back) arm
+    ctx.fillRect(x+BW-2,armY+2,6,6);// right (front) arm
+  } else {
+    ctx.fillRect(x+BW-3,armY,7,6);
+    ctx.fillRect(x-4,armY+2,6,6);
+  }
+  ctx.fillStyle=darkPaw;
+  if(d>0){ctx.fillRect(x-4,armY+4,7,4);ctx.fillRect(x+BW-2,armY+4,6,4);}
+  else{ctx.fillRect(x+BW-3,armY+4,7,4);ctx.fillRect(x-4,armY+4,6,4);}
+
+  // ── Beaver tail — wide flat paddle ──
+  const tailW=30, tailH=30;
+  const tailX=d>0?x-tailW+2:x+BW-2;
+  // Shadow
+  ctx.fillStyle='#0d0d14';
+  ctx.fillRect(tailX+2,bodyY+BH-tailH+2,tailW,tailH);
+  // Main paddle
+  ctx.fillStyle='#1a1a2a';
+  ctx.fillRect(tailX,bodyY+BH-tailH,tailW,tailH);
+  // Lighter inner face
+  ctx.fillStyle='#252535';
+  ctx.fillRect(tailX+2,bodyY+BH-tailH+2,tailW-4,tailH-4);
+  // Scale grid 3x2
+  ctx.fillStyle='rgba(255,255,255,0.1)';
+  for(let row=0;row<3;row++) for(let col=0;col<4;col++)
+    ctx.fillRect(tailX+3+col*6,bodyY+BH-tailH+4+row*8,4,5);
+  // Edge highlight
+  ctx.fillStyle='rgba(255,255,255,0.06)';
+  ctx.fillRect(tailX,bodyY+BH-tailH,2,tailH);
+
+  // ── Head — big, round, on top of body ──
+  const headX=x+(d>0?1:0);
+  const headY=y;
+  // Head shadow
+  ctx.fillStyle='#3d2810';
+  ctx.fillRect(headX-1,headY+1,HW+1,HH+1);
+  // Head fur
+  ctx.fillStyle='#6b4228';
+  ctx.fillRect(headX,headY,HW,HH);
+  // Head rounding
+  ctx.fillStyle='#3d2810';
+  ctx.fillRect(headX,headY,2,2);ctx.fillRect(headX+HW-2,headY,2,2);
+  // Head shine
+  ctx.fillStyle='rgba(255,200,150,0.08)';
+  ctx.fillRect(headX+2,headY+1,HW-4,4);
+
+  // Small round ears
+  ctx.fillStyle='#3d2810';
+  ctx.fillRect(headX+2,headY-4,6,5);
+  ctx.fillRect(headX+HW-7,headY-4,6,5);
+  ctx.fillStyle='#6b4228';
+  ctx.fillRect(headX+3,headY-3,4,4);
+  ctx.fillRect(headX+HW-6,headY-3,4,4);
+  // Inner ear
+  ctx.fillStyle='rgba(200,100,120,0.5)';
+  ctx.fillRect(headX+4,headY-2,2,2);
+  ctx.fillRect(headX+HW-5,headY-2,2,2);
+
+  // ── Thong hat ── (if collected)
+  if(player.hasThong){
+    const thx=headX-2;
+    const thy=headY-12;
+    // Pulsing shield glow to show active invulnerability
+    const glowPulse=0.6+0.4*Math.sin(frameCount*0.18);
+    ctx.shadowColor='#ff88cc';ctx.shadowBlur=10*glowPulse;
+    // Waistband sits on top of head
+    ctx.fillStyle='#f090b0';ctx.fillRect(thx,thy+6,HW+4,5);
+    ctx.fillStyle='#ffcce0';ctx.fillRect(thx,thy+6,HW+4,2);
+    // Scallop lace across top
+    ctx.fillStyle='#e87aaa';
+    for(let s=0;s<4;s++){ctx.fillRect(thx+s*6,thy+3,5,3);ctx.fillRect(thx+s*6+1,thy+1,3,2);}
+    // V panel drooping down over forehead
+    ctx.fillStyle='#f090b0';
+    [[3,11,6],[4,13,4],[5,15,2]].forEach(([ox,oy,w])=>ctx.fillRect(thx+ox,thy+oy,w,2));
+    // Side straps dangling
+    ctx.fillStyle='#d85888';
+    ctx.fillRect(thx-1,  thy+6,3,8);
+    ctx.fillRect(thx+HW+2,thy+6,3,8);
+    ctx.shadowBlur=0;
+  }
+
+  // ── Big googly eyes (facing direction) ──
+  const eyeOffX=d>0?HW-8:2;
+  const eyeOffX2=d>0?HW-14:8;
+  // White sclera
+  ctx.fillStyle='#f0f0f0';
+  ctx.fillRect(headX+eyeOffX,headY+3,8,8);
+  ctx.fillRect(headX+eyeOffX2,headY+3,8,8);
+  // Dark pupil
+  ctx.fillStyle='#1a1a1a';
+  const pupilDx=d>0?2:0;
+  ctx.fillRect(headX+eyeOffX+pupilDx+1,headY+5,4,4);
+  ctx.fillRect(headX+eyeOffX2+pupilDx+1,headY+5,4,4);
+  // Eye shine
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(headX+eyeOffX+pupilDx,headY+4,2,2);
+  ctx.fillRect(headX+eyeOffX2+pupilDx,headY+4,2,2);
+  // Blink
+  if(p.blinkT%45<3){
+    ctx.fillStyle='#6b4228';
+    ctx.fillRect(headX+eyeOffX,headY+3,8,4);
+    ctx.fillRect(headX+eyeOffX2,headY+3,8,4);
+  }
+  // Stress lines on eyes when chased
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(headX+eyeOffX-1,headY+2,1,2);
+  ctx.fillRect(headX+eyeOffX2+9,headY+2,1,2);
+
+  // ── Big dark snout / muzzle ──
+  const snoutX=d>0?headX+HW-7:headX-1;
+  ctx.fillStyle='#2a2a3a';
+  ctx.fillRect(snoutX,headY+8,9,8);
+  // Snout highlight
+  ctx.fillStyle='rgba(100,100,150,0.4)';
+  ctx.fillRect(snoutX+1,headY+8,7,2);
+  // Nostrils
+  ctx.fillStyle='#1a1a28';
+  ctx.fillRect(snoutX+1,headY+10,2,2);
+  ctx.fillRect(snoutX+5,headY+10,2,2);
+  // Whiskers
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.fillRect(d>0?snoutX-8:snoutX+9,headY+10,8,1);
+  ctx.fillRect(d>0?snoutX-6:snoutX+9,headY+12,6,1);
+  // Mouth open showing teeth when tongue is out or alert
+  const mouthOpen=tongue.phase!=='idle'||caughtFlash>0;
+  if(mouthOpen){
+    ctx.fillStyle='#c0203a';// gum/mouth interior
+    ctx.fillRect(snoutX,headY+14,9,6);
+    // Teeth
+    ctx.fillStyle='#f0ead8';
+    ctx.fillRect(snoutX+1,headY+14,3,3);
+    ctx.fillRect(snoutX+5,headY+14,3,3);
+    ctx.fillRect(snoutX+1,headY+17,3,3);
+    ctx.fillRect(snoutX+5,headY+17,3,3);
+  } else {
+    // Closed mouth
+    ctx.fillStyle='#1a1a28';
+    ctx.fillRect(snoutX,headY+14,9,3);
+    // Teeth peeking
+    ctx.fillStyle='#f0ead8';
+    ctx.fillRect(snoutX+1,headY+14,3,2);
+    ctx.fillRect(snoutX+5,headY+14,3,2);
+  }
+
+  // ── Carried item ──
+  if(item&&!duck){
+    ctx.font='11px serif';ctx.textBaseline='top';
+    ctx.fillText(item.emoji,x+(d>0?BW+1:-14),bodyY+2);
+  }
+
+  ctx.globalAlpha=1;
+}
+
+// ── TURRET DRAW ────────────────────────────────────────────
+function drawTurrets(){
+  for(const t of turrets){
+    const sx=t.x-worldX;
+    if(sx+t.w<-20||sx>W+20)continue;
+
+    // ── Destroyed turret (puddle state) ──────────────────────
+    if(t.state==='puddle'){
+      // Scorch mark on wall behind bracket
+      const scX=t.dir>0?sx-12:sx+t.w+2;
+      ctx.save();
+      ctx.globalAlpha=0.55;
+      ctx.fillStyle='#1a0a00';
+      ctx.fillRect(scX,t.y-2,14,t.h+4);
+      ctx.globalAlpha=0.25;
+      ctx.fillStyle='#ff6600';
+      ctx.fillRect(scX+2,t.y,10,t.h);
+      ctx.restore();
+      // Bracket arm (still bolted in)
+      const brkX=t.dir>0?sx-8:sx+t.w;
+      ctx.fillStyle='#1a1010';ctx.fillRect(brkX,t.y+t.h/2-3,10,6);
+      // Cracked body — dark, scorched
+      ctx.fillStyle='#1a1010';ctx.fillRect(sx,t.y+4,t.w,t.h-8);
+      // Crack lines across the body
+      ctx.save();ctx.strokeStyle='#000';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(sx+4,t.y+5);ctx.lineTo(sx+t.w-2,t.y+t.h-6);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx+t.w-5,t.y+5);ctx.lineTo(sx+4,t.y+t.h-6);ctx.stroke();
+      ctx.restore();
+      // Dead LED (dark red — off)
+      ctx.fillStyle='#330000';ctx.fillRect(sx+t.w/2-2,t.y+6,4,4);
+      // Barrel drooping down at ~35°
+      const barrelX=t.dir>0?sx+t.w:sx-12;
+      ctx.save();
+      ctx.translate(barrelX+(t.dir>0?0:13),t.y+t.h/2);
+      ctx.rotate(t.dir>0?0.6:-0.6);
+      ctx.fillStyle='#0d0d0d';ctx.fillRect(0,-4,13,8);
+      ctx.fillStyle='#111';ctx.fillRect(0,-3,11,6);
+      ctx.restore();
+      // Smoke wisps rising from body
+      ctx.save();
+      for(let i=0;i<3;i++){
+        const wox=(i-1)*5;
+        const wAlpha=0.18+i*0.06;
+        ctx.globalAlpha=wAlpha;
+        ctx.fillStyle='#888';
+        ctx.beginPath();
+        ctx.ellipse(sx+t.w/2+wox,t.y-4-i*5,3,5,0,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+      continue;
+    }
+
+    const acc=T.accent;
+    const danger=T.danger;
+    const pulse=Math.sin(t.pulseT*.08)*.5+.5;
+
+    // Detection fan
+    if(t.alertAlpha>0){
+      const baseA=t.dir>0?0:Math.PI,spread=Math.PI*.25;
+      ctx.save();ctx.globalAlpha=t.alertAlpha*.15;
+      const fanCol=t.state==='charging'||t.state==='firing'?danger:acc;
+      ctx.fillStyle=fanCol;
+      ctx.beginPath();ctx.moveTo(sx+t.w/2,t.y+t.h/2);
+      ctx.arc(sx+t.w/2,t.y+t.h/2,t.detectRange,baseA-spread,baseA+spread);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+
+    // Idle scan laser
+    if(t.state==='idle'){
+      const scanA=(t.dir>0?0:Math.PI)+Math.sin(t.scanAngle)*.28;
+      ctx.save();ctx.globalAlpha=.3+pulse*.15;
+      ctx.strokeStyle=acc;ctx.lineWidth=1.5;ctx.setLineDash([5,7]);
+      ctx.shadowColor=acc;ctx.shadowBlur=4;
+      ctx.beginPath();
+      ctx.moveTo(sx+t.w/2,t.y+t.h/2);
+      ctx.lineTo(sx+t.w/2+Math.cos(scanA)*85,t.y+t.h/2+Math.sin(scanA)*85);
+      ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    }
+
+    // Warning/charge beam
+    if(t.state==='detecting'||t.state==='charging'){
+      const cr=t.state==='charging'?t.chargeT/20:t.chargeT/t.chargeMax;
+      const targetA=t.dir>0?0:Math.PI;
+      ctx.save();ctx.globalAlpha=.2+cr*.6;
+      ctx.strokeStyle=danger;ctx.lineWidth=2+cr*5;
+      ctx.shadowColor=danger;ctx.shadowBlur=8+cr*12;
+      ctx.beginPath();
+      ctx.moveTo(sx+t.w/2,t.y+t.h/2);
+      ctx.lineTo(sx+t.w/2+Math.cos(targetA)*t.detectRange*.55,t.y+t.h/2);
+      ctx.stroke();
+      // Charge ring
+      ctx.lineWidth=3;ctx.shadowBlur=6;
+      ctx.strokeStyle=danger;ctx.globalAlpha=.9;
+      ctx.beginPath();ctx.arc(sx+t.w/2,t.y+t.h/2,t.w/2+7,-Math.PI/2,-Math.PI/2+cr*Math.PI*2);
+      ctx.stroke();ctx.restore();
+    }
+
+    // Wall bracket — arm bolted into the brick behind the turret
+    const brkX=t.dir>0?sx-8:sx+t.w;
+    // Bracket arm
+    ctx.fillStyle='#141420';
+    ctx.fillRect(brkX,t.y+t.h/2-3,10,6);
+    // Wall plate (flush to wall)
+    ctx.fillStyle='#1a1a2a';
+    ctx.fillRect(t.dir>0?sx-10:sx+t.w+2,t.y,8,t.h);
+    ctx.fillStyle='rgba(255,255,255,0.06)';
+    ctx.fillRect(t.dir>0?sx-10:sx+t.w+2,t.y,2,t.h);
+    // Bolt heads top and bottom of wall plate
+    ctx.fillStyle='#333344';
+    ctx.fillRect(t.dir>0?sx-8:sx+t.w+4,t.y+3,4,4);
+    ctx.fillRect(t.dir>0?sx-8:sx+t.w+4,t.y+t.h-7,4,4);
+    ctx.fillStyle='rgba(255,255,255,0.15)';
+    ctx.fillRect(t.dir>0?sx-8:sx+t.w+4,t.y+3,2,2);
+    ctx.fillRect(t.dir>0?sx-8:sx+t.w+4,t.y+t.h-7,2,2);
+    // Drop shadow below turret (subtle, cast on wall)
+    ctx.fillStyle='rgba(0,0,0,0.25)';
+    ctx.fillRect(sx-2,t.y+t.h,t.w+4,5);
+
+    // Body
+    ctx.fillStyle='#2a2a38';ctx.fillRect(sx,t.y+4,t.w,t.h-8);
+    ctx.fillStyle='#323245';ctx.fillRect(sx,t.y+4,t.w-2,t.h-8-2);
+
+    // Panel lines
+    ctx.fillStyle='rgba(0,0,0,0.3)';
+    ctx.fillRect(sx+t.w/2-1,t.y+5,2,t.h-10);
+
+    // Top cap
+    ctx.fillStyle='#3a3a4e';ctx.fillRect(sx+3,t.y,t.w-6,5);
+    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(sx+3,t.y,t.w-6,1);
+
+    // LED — color by state
+    const leds={idle:'#00cc44',detecting:'#ffaa00',charging:'#ff6600',firing:'#ff0022',cooldown:'#664400'};
+    const ledC=leds[t.state]||'#00cc44';
+    ctx.fillStyle=ledC;ctx.fillRect(sx+t.w/2-2,t.y+6,4,4);
+    ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillRect(sx+t.w/2-2,t.y+6,2,2);
+    // LED glow
+    ctx.fillStyle=ledC+'44';
+    ctx.beginPath();ctx.arc(sx+t.w/2,t.y+8,7,0,Math.PI*2);ctx.fill();
+
+    // Barrel
+    const barrelX=t.dir>0?sx+t.w:sx-12;
+    ctx.fillStyle='#111';ctx.fillRect(barrelX,t.y+t.h/2-4,13,8);
+    ctx.fillStyle='#222';ctx.fillRect(barrelX,t.y+t.h/2-3,11,6);
+    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(barrelX,t.y+t.h/2-3,11,1);
+
+    // Muzzle flash
+    if(t.state==='firing'&&t.burstCooldown>7){
+      const tipX=t.dir>0?barrelX+14:barrelX-3;
+      ctx.fillStyle=T.bulletColor+'bb';
+      ctx.beginPath();ctx.arc(tipX,t.y+t.h/2,6,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.6)';
+      ctx.beginPath();ctx.arc(tipX,t.y+t.h/2,2,0,Math.PI*2);ctx.fill();
+    }
+
+    // Detect/charge warning icon
+    if((t.state==='detecting'||t.state==='charging')&&t.alertAlpha>.3){
+      ctx.save();ctx.globalAlpha=t.alertAlpha;
+      ctx.font='11px serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+      ctx.fillText(t.state==='charging'?'🔴':'⚠️',sx+t.w/2,t.y-5);
+      ctx.restore();
+    }
+  }
+}
+
+// ── BULLETS ────────────────────────────────────────────────
+function drawBullets(){
+  for(const b of bullets){
+    const bsx=b.x-worldX;
+    if(bsx<-12||bsx>W+12)continue;
+    // Glow
+    ctx.fillStyle=T.bulletGlow;
+    ctx.fillRect(bsx-5,b.y-5,b.w+10,b.h+10);
+    // Trail
+    ctx.fillStyle=T.bulletColor+'55';
+    const td=b.vx>0?-1:1;
+    ctx.fillRect(bsx+td*10,b.y+1,10,b.h-2);
+    ctx.fillRect(bsx+td*18,b.y+1,6,b.h-2);
+    // Core
+    ctx.fillStyle=T.bulletColor;
+    ctx.fillRect(bsx,b.y,b.w,b.h);
+    // Bright tip
+    ctx.fillStyle='#fff';
+    ctx.fillRect(b.vx>0?bsx+b.w-2:bsx,b.y+1,2,b.h-2);
+  }
+}
+
+// ── PARTICLES ──────────────────────────────────────────────
+function drawParticles(){
+  for(const pt of particles){
+    ctx.globalAlpha=Math.pow(pt.life/pt.max,0.6);
+    ctx.fillStyle=pt.color;
+    ctx.fillRect(pt.x-pt.size/2,pt.y-pt.size/2,pt.size,pt.size);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── BUST CUTSCENE ──────────────────────────────────────────
+function drawBustCutscene(){
+  const t=bustCutsceneT;
+  let alpha=1;
+  if(t<40)alpha=t/40;
+  else if(t>280)alpha=1-(t-280)/40;
+
+  // Dark background + red scanlines
+  ctx.fillStyle='#020004';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(180,0,30,0.08)';
+  for(let y2=0;y2<H;y2+=4)ctx.fillRect(0,y2,W,2);
+  const vg=ctx.createRadialGradient(W/2,H/2,60,W/2,H/2,W/2);
+  vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(150,0,0,0.4)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+  ctx.save();ctx.globalAlpha=alpha;
+
+  // Guard slides in from right (700→590 over t=0–35), smirking
+  const gSlide=Math.min(1,t/35);
+  const gx=Math.round(700-gSlide*110);
+  drawCutsceneGuard(gx,205,1.8,true);
+
+  // Lickalotapus on left, dazed, tongue retracted
+  const lickX=160,lickY=290;
+  drawLickalotapus(lickX,lickY,2.0,1,0,t,0);
+
+  // Dazed stars orbiting above head (visible once guard arrives)
+  if(gSlide>=1){
+    ctx.fillStyle='#ffeeaa';
+    for(let i=0;i<3;i++){
+      const angle=t*0.12+i*2.094;
+      const sx=Math.round(lickX+42+Math.cos(angle)*20);
+      const sy=Math.round(lickY-82+Math.sin(angle)*7);
+      // 4-point star pixel shape
+      ctx.fillRect(sx-1,sy-3,2,6);
+      ctx.fillRect(sx-3,sy-1,6,2);
+    }
+  }
+
+  // Speech bubble — tail RIGHT, pointing toward guard at gx=590
+  const bubA=Math.min(1,Math.max(0,(t-45)/15));
+  if(bubA>0){
+    ctx.save();ctx.globalAlpha*=bubA;
+    const bx=235,by=28,bw=240,bh=72;
+    const pop=bubA<1?0.85+bubA*0.15:1;
+    ctx.save();
+    ctx.translate(bx+bw/2,by+bh/2);ctx.scale(pop,pop);ctx.translate(-(bx+bw/2),-(by+bh/2));
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(bx+4,by+4,bw,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx,by,bw,3);ctx.fillRect(bx,by+bh-3,bw,3);
+    ctx.fillRect(bx,by,3,bh);ctx.fillRect(bx+bw-3,by,3,bh);
+    // Tail on right side pointing toward guard
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';
+    ctx.fillRect(bx+bw-4,by+bh-18,18,10);
+    ctx.fillRect(bx+bw+10,by+bh-12,12,6);
+    ctx.fillRect(bx+bw+18,by+bh-8,8,4);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx+bw+14,by+bh-18,3,10);
+    ctx.fillRect(bx+bw+19,by+bh-12,3,6);
+    ctx.fillRect(bx+bw+23,by+bh-8,3,4);
+    ctx.fillRect(bx+bw-4,by+bh-4,32,3);
+    ctx.font='bold 12px "Press Start 2P"';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#1a1a2a';
+    if(bustIsGameOver){
+      ctx.fillText(bustTaunt.l1,bx+bw/2,by+bh/2-13);
+      ctx.fillStyle=slimeMode?'#22aa22':'#cc2222';
+      ctx.shadowColor=slimeMode?'#00ff44':'#ff4444';ctx.shadowBlur=5;
+      ctx.fillText(bustTaunt.l2,bx+bw/2,by+bh/2+13);
+    } else {
+      ctx.fillText(bustTaunt.l1,bx+bw/2,by+bh/2-13);
+      ctx.fillStyle='#444';
+      ctx.fillText(bustTaunt.l2,bx+bw/2,by+bh/2+13);
+    }
+    ctx.shadowBlur=0;
+    ctx.restore();ctx.restore();
+  }
+
+  const vig2=ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,420);
+  vig2.addColorStop(0,'transparent');vig2.addColorStop(1,'rgba(0,0,0,0.75)');
+  ctx.fillStyle=vig2;ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  const fadeAlpha=t<40?1-alpha:t>280?1-alpha:0;
+  if(fadeAlpha>0){ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;ctx.fillRect(0,0,W,H);}
+}
+
+// ── WIN CUTSCENE (IS ALSO THE FINAL WIN SCREEN) ─────────────
+function drawWinCutscene(){
+  const t=winCutsceneT;
+  // Fade in only — no automatic fade out (player stays here until they press space)
+  const alpha=t<50?t/50:1;
+
+  // Left half: prison dark
+  ctx.fillStyle='#020004';ctx.fillRect(0,0,W/2,H);
+  ctx.fillStyle='rgba(180,0,30,0.05)';
+  for(let y2=0;y2<H;y2+=4)ctx.fillRect(0,y2,W/2,2);
+
+  // Right half: outside sky
+  const skyGrd=ctx.createLinearGradient(W/2,0,W,H);
+  if(slimeMode){skyGrd.addColorStop(0,'#0a4a0a');skyGrd.addColorStop(1,'#001a00');}
+  else{skyGrd.addColorStop(0,'#1a6aaa');skyGrd.addColorStop(1,'#0a2244');}
+  ctx.fillStyle=skyGrd;ctx.fillRect(W/2,0,W/2,H);
+
+  ctx.save();ctx.globalAlpha=alpha;
+
+  // Confetti on right half — continuous loop (resets every 4s, driven by Date.now)
+  ctx.save();
+  ctx.beginPath();ctx.rect(W/2+1,0,W/2-1,H);ctx.clip();
+  const confT=(Date.now()/900)%4;
+  const confCols=[T.accent,T.accent2,'#fff','#ffdd44',slimeMode?'#00ffaa':'#88aaff'];
+  for(let i=0;i<22;i++){
+    const a=(i/22)*Math.PI*2,r=confT*140;
+    const px2=W*0.75+Math.cos(a)*r,py2=H/2+Math.sin(a)*r*0.4;
+    ctx.globalAlpha=alpha*Math.max(0,1-confT/4)*(0.5+Math.sin(confT*3+i)*0.4);
+    ctx.fillStyle=confCols[i%confCols.length];
+    ctx.fillRect(px2,py2,i%3===0?7:4,i%3===0?7:4);
+  }
+  ctx.restore();
+  ctx.globalAlpha=alpha;
+
+  // Dividing line: glowing vertical bar at W/2
+  ctx.save();
+  ctx.shadowColor=slimeMode?'#7fff00':'#ffdd44';ctx.shadowBlur=14;
+  ctx.fillStyle=slimeMode?'#7fff00':'#ffdd44';ctx.fillRect(W/2-2,0,4,H);
+  ctx.shadowBlur=0;ctx.restore();
+
+  // Guard on left, confused, stern
+  drawCutsceneGuard(155,200,1.8,false);
+
+  // Guard speech bubble (tail pointing RIGHT toward guard face) — pops at t=70
+  const gBubA=Math.min(1,Math.max(0,(t-70)/15));
+  if(gBubA>0){
+    ctx.save();ctx.globalAlpha*=gBubA;
+    const bx=260,by=32,bw=186,bh=58;
+    const pop=gBubA<1?0.85+gBubA*0.15:1;
+    ctx.save();
+    ctx.translate(bx+bw/2,by+bh/2);ctx.scale(pop,pop);ctx.translate(-(bx+bw/2),-(by+bh/2));
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(bx+4,by+4,bw,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx,by,bw,3);ctx.fillRect(bx,by+bh-3,bw,3);
+    ctx.fillRect(bx,by,3,bh);ctx.fillRect(bx+bw-3,by,3,bh);
+    // Tail on LEFT pointing at guard (guard is at x=155, left of bubble)
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';
+    ctx.fillRect(bx-14,by+bh-22,18,12);
+    ctx.fillRect(bx-22,by+bh-14,12,7);
+    ctx.fillRect(bx-28,by+bh-9,8,5);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx-14,by+bh-22,3,12);
+    ctx.fillRect(bx-22,by+bh-14,3,7);
+    ctx.fillRect(bx-28,by+bh-9,3,5);
+    ctx.fillRect(bx-28,by+bh-4,32,3);
+    ctx.font='bold 11px "Press Start 2P"';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#1a1a2a';
+    ctx.fillText(slimeMode?'my slimes...':'Where did',bx+bw/2,by+bh/2-9);
+    ctx.fillText(slimeMode?'🤔':'he go? 🤔',bx+bw/2,by+bh/2+11);
+    ctx.restore();ctx.restore();
+  }
+
+  // Lickalotapus crosses from left to right, then bounces forever
+  let lickX, lickTongue=0, walkT2, bounce2=0;
+  if(t<60){
+    lickX=Math.round(260+(t/60)*90); // 260→350, approaching nervously
+    walkT2=t*0.5;
+  } else if(t<100){
+    lickX=Math.round(350+((t-60)/40)*110); // 350→460, dashes across!
+    lickTongue=Math.min(20,(t-60)*0.5);
+    walkT2=t*1.2;
+  } else {
+    lickX=460;
+    lickTongue=20+Math.sin(t*0.15)*6;
+    walkT2=t*0.6;
+    bounce2=Math.round(Math.abs(Math.sin(t*0.18))*-10);
+  }
+  const tremble=(t<60)?Math.sin(t*0.4)*1.5:0;
+  drawLickalotapus(lickX+Math.round(tremble),290+bounce2,2.2,1,lickTongue,t,walkT2);
+
+  // Lickalotapus speech bubble — tail LEFT pointing at Lickalotapus, pops at t=110
+  const lBubA=Math.min(1,Math.max(0,(t-110)/15));
+  if(lBubA>0){
+    ctx.save();ctx.globalAlpha*=lBubA;
+    const bx=490,by=18,bw=260,bh=88; // shifted right so left tail points at Lickalotapus (x=460)
+    const pop=lBubA<1?0.85+lBubA*0.15:1;
+    ctx.save();
+    ctx.translate(bx+bw/2,by+bh/2);ctx.scale(pop,pop);ctx.translate(-(bx+bw/2),-(by+bh/2));
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(bx+4,by+4,bw,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx,by,bw,3);ctx.fillRect(bx,by+bh-3,bw,3);
+    ctx.fillRect(bx,by,3,bh);ctx.fillRect(bx+bw-3,by,3,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';
+    ctx.fillRect(bx-14,by+bh-22,18,12);
+    ctx.fillRect(bx-22,by+bh-14,12,7);
+    ctx.fillRect(bx-28,by+bh-9,8,5);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx-14,by+bh-22,3,12);
+    ctx.fillRect(bx-22,by+bh-14,3,7);
+    ctx.fillRect(bx-28,by+bh-9,3,5);
+    ctx.fillRect(bx-28,by+bh-4,32,3);
+    ctx.font='bold 12px "Press Start 2P"';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#1a1a2a';
+    ctx.fillText(slimeMode?'SLIMED OUT!! 🏃':'FREEDOM!! 🏃',bx+bw/2,by+22);
+    ctx.fillStyle='#444';
+    ctx.fillText(slimeMode?'no lick left behind.':'licked my way out fr.',bx+bw/2,by+46);
+    ctx.save();
+    ctx.shadowColor=slimeMode?'#7fff00':'#ffdd44';ctx.shadowBlur=6;
+    ctx.fillStyle=slimeMode?'#7fff00':'#ffdd44';
+    ctx.fillText(slimeMode?'fr fr no cap. 💨':'no cap. 🧢',bx+bw/2,by+70);
+    ctx.shadowBlur=0;
+    ctx.restore();
+    ctx.restore();ctx.restore();
+  }
+
+  // ── Score panel — fades in at t=480, bottom-right area ──
+  const scoreA=Math.min(1,Math.max(0,(t-480)/40));
+  if(scoreA>0){
+    ctx.save();ctx.globalAlpha*=scoreA;
+    // Dark panel on right half below the speech bubble
+    const px=415,py=116,pw=376,ph=124;
+    ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(px,py,pw,ph);
+    ctx.fillStyle=slimeMode?'rgba(0,120,0,0.3)':'rgba(0,20,80,0.4)';ctx.fillRect(px,py,pw,ph);
+    // Panel border
+    ctx.fillStyle=slimeMode?'#7fff00':'#ffdd44';
+    ctx.fillRect(px,py,pw,2);ctx.fillRect(px,py+ph-2,pw,2);
+    ctx.fillRect(px,py,2,ph);ctx.fillRect(px+pw-2,py,2,ph);
+    // Score lines
+    pxt('FINAL SCORE',px+pw/2,py+10,7,'rgba(200,200,200,0.7)','center');
+    pxt(score.toString().padStart(7,'0'),px+pw/2,py+28,14,T.accent,'center',T.accent);
+    pxt(slimeMode?'ALL 10 LEVELS SLURPED':'ALL 10 LEVELS LICKED',px+pw/2,py+62,6,T.accent2,'center',T.accent2);
+    pxt('A TRUE CRIMINAL MASTERMIND',px+pw/2,py+80,5,'rgba(140,140,140,0.7)','center');
+    // Blinking "press space" from t=560
+    if(t>560&&Math.floor(Date.now()/550)%2===0){
+      pxt('PRESS SPACE TO PLAY AGAIN',px+pw/2,py+100,6,T.accent,'center',T.accent);
+    }
+    ctx.restore();
+  }
+
+  const vig=ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,420);
+  vig.addColorStop(0,'transparent');vig.addColorStop(1,'rgba(0,0,0,0.6)');
+  ctx.fillStyle=vig;ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  // Only fade in, never fade out automatically
+  if(t<50){ctx.fillStyle=`rgba(0,0,0,${1-alpha})`;ctx.fillRect(0,0,W,H);}
+}
+
+// ── WARDEN CUTSCENE ─────────────────────────────────────────
+function drawWardenCutscene(){
+  const t=wardenCutsceneT;
+  let alpha=1;
+  if(t<50)alpha=t/50;
+  else if(t>380)alpha=1-(t-380)/50;
+
+  // Dark background, ominous red vignette
+  ctx.fillStyle='#020004';ctx.fillRect(0,0,W,H);
+  const bgGrd=ctx.createRadialGradient(W/2,H/2,40,W/2,H/2,380);
+  bgGrd.addColorStop(0,slimeMode?'rgba(0,40,0,0.4)':'rgba(60,0,0,0.4)');
+  bgGrd.addColorStop(1,'transparent');
+  ctx.fillStyle=bgGrd;ctx.fillRect(0,0,W,H);
+
+  ctx.save();ctx.globalAlpha=alpha;
+
+  // Regular guard: slides in from right (t=0–40) then shoved off right (t=40–80)
+  const gIn=Math.min(1,t/40);
+  const gOut=t>40?Math.min(1,(t-40)/40):0;
+  const regularGx=Math.round(700-gIn*110+gOut*220); // 700→590→810
+  if(regularGx<W+50){drawCutsceneGuard(regularGx,205,1.7,true);}
+
+  // Warden slides in from far right (t=50–110)
+  const wardenSlide=t>=50?Math.min(1,(t-50)/60):0;
+  const wardenGx=Math.round(860-wardenSlide*320); // 860→540
+  const wardenGy=320;
+  const ws=2.4;
+  if(wardenSlide>0){
+    drawCutsceneGuard(wardenGx,wardenGy,ws,false);
+    // Red authority stripes on hat, drawn in screen space after guard restores transform
+    ctx.fillStyle=slimeMode?'#004400':'#aa1a00';
+    ctx.fillRect(Math.round(wardenGx-36*ws),Math.round(wardenGy-116*ws),Math.round(72*ws),Math.round(4*ws));
+    ctx.fillRect(Math.round(wardenGx-36*ws),Math.round(wardenGy-100*ws),Math.round(72*ws),Math.round(4*ws));
+  }
+
+  // Lickalotapus: slides in from left (t=0–40) then bounces briefly, then trembles at t=90+
+  const lickSlide=Math.min(1,t/40);
+  const lickX=Math.round(-80+lickSlide*280); // arrives at 200
+  const trembleAmt=t>=90?Math.sin(t*0.45)*2.5:0;
+  const bounce=(lickSlide>=1&&t<90)?Math.abs(Math.sin(t*0.18))*(-7):0;
+  drawLickalotapus(lickX+Math.round(trembleAmt),295+Math.round(bounce),2.0,1,0,t,t*0.5);
+
+  // Sweat drops on Lickalotapus when trembling
+  if(t>=90){
+    const sdrop=(t%36)/36;
+    const sy=Math.round(275+sdrop*22);
+    const sAlpha=sdrop<0.5?sdrop*2:2-sdrop*2;
+    ctx.save();ctx.globalAlpha*=sAlpha*0.8;
+    ctx.fillStyle=slimeMode?'#7fff00':'#88ccff';
+    ctx.fillRect(lickX+34,sy,5,8);ctx.fillRect(lickX+35,sy+8,3,3);
+    ctx.restore();
+  }
+
+  // Warning symbols floating between characters (t=95+)
+  if(t>=95){
+    for(let i=0;i<3;i++){
+      const wt=(t*0.5+i*40)%60;
+      const wx2=Math.round(275+Math.sin(wt*0.1)*14+(i-1)*24);
+      const wy2=Math.round(310-wt*3.0);
+      const wA=wt<15?wt/15:wt>45?1-(wt-45)/15:1;
+      ctx.save();ctx.globalAlpha*=wA*0.9;
+      ctx.fillStyle=slimeMode?'#66ff44':'#ff4422';
+      ctx.fillRect(wx2-2,wy2,4,8);   // exclamation shaft
+      ctx.fillRect(wx2-2,wy2+10,4,4); // exclamation dot
+      ctx.restore();
+    }
+  }
+
+  // Warden speech bubble — tail LEFT toward Lickalotapus, pops at t=105
+  const bubA=Math.min(1,Math.max(0,(t-105)/15));
+  if(bubA>0&&wardenSlide>0.3){
+    ctx.save();ctx.globalAlpha*=bubA;
+    const bx=Math.round(wardenGx-310),by=18,bw=215,bh=78;
+    const pop=bubA<1?0.85+bubA*0.15:1;
+    ctx.save();
+    ctx.translate(bx+bw/2,by+bh/2);ctx.scale(pop,pop);ctx.translate(-(bx+bw/2),-(by+bh/2));
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(bx+4,by+4,bw,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx,by,bw,3);ctx.fillRect(bx,by+bh-3,bw,3);
+    ctx.fillRect(bx,by,3,bh);ctx.fillRect(bx+bw-3,by,3,bh);
+    // Tail on right side pointing toward Warden
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';
+    ctx.fillRect(bx+bw-4,by+bh-18,18,10);
+    ctx.fillRect(bx+bw+10,by+bh-12,12,6);
+    ctx.fillRect(bx+bw+18,by+bh-8,8,4);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx+bw+14,by+bh-18,3,10);
+    ctx.fillRect(bx+bw+19,by+bh-12,3,6);
+    ctx.fillRect(bx+bw+23,by+bh-8,3,4);
+    ctx.fillRect(bx+bw-4,by+bh-4,32,3);
+    ctx.font='bold 12px "Press Start 2P"';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=slimeMode?'#114411':'#1a1a2a';
+    ctx.fillText(slimeMode?'I\'m watching you,':'I\'m watching you,',bx+bw/2,by+bh/2-13);
+    ctx.save();
+    ctx.shadowColor=slimeMode?'#00ff44':'#ff2200';ctx.shadowBlur=6;
+    ctx.fillStyle=slimeMode?'#22dd22':'#cc1100';
+    ctx.fillText(slimeMode?'slime boy. 👁️':'tongue boy. 👁️',bx+bw/2,by+bh/2+13);
+    ctx.shadowBlur=0;ctx.restore();
+    ctx.restore();ctx.restore();
+  }
+
+  const vig=ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,420);
+  vig.addColorStop(0,'transparent');vig.addColorStop(1,'rgba(0,0,0,0.75)');
+  ctx.fillStyle=vig;ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  const fadeAlpha=t<50?1-alpha:t>380?1-alpha:0;
+  if(fadeAlpha>0){ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;ctx.fillRect(0,0,W,H);}
+}
+
+// ── ALERT BUBBLES ──────────────────────────────────────────
+function drawAlertBubbles(){
+  for(const b of alertBubbles){
+    const sx=b.wx-worldX;
+    if(sx<-30||sx>W+30)continue;
+    ctx.globalAlpha=Math.min(1,b.t/(b.max*.6));
+    const bw=b.text.length*8+14;
+    const fy=b.wy||FLOOR;
+    ctx.fillStyle='rgba(0,0,0,0.8)';ctx.fillRect(sx-2,fy-97,bw+4,24);
+    ctx.fillStyle='#fff';ctx.fillRect(sx,fy-95,bw,20);
+    ctx.fillStyle='#1a1a1a';ctx.fillRect(sx+2,fy-93,bw-4,16);
+    ctx.fillStyle='#fff';ctx.fillRect(sx+5,fy-74,8,5);
+    pxt(b.text,sx+5,fy-92,8,'#ff3344');
+    ctx.globalAlpha=1;
+  }
+}
+
+// ── RESPAWN COUNTDOWN ──────────────────────────────────────
+function drawRespawnCountdown(){
+  drawGame();
+  // Fade to black over first 90 frames, hold at 0.72
+  const fadeAlpha=Math.min(1,respawnT/90);
+  ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;ctx.fillRect(0,0,W,H);
+  // Only show text once fade is mostly in
+  if(respawnT<30)return;
+  const textAlpha=Math.min(1,(respawnT-30)/40);
+  ctx.globalAlpha=textAlpha;
+  // BUSTED
+  pxt('BUSTED!',W/2,H/2-50,22,'#ff2244','center','#ff0022');
+  pxt(lives+' LIVES LEFT',W/2,H/2-18,9,'#fff','center');
+  // Countdown digit (3 → 2 → 1)
+  const n=3-Math.floor(respawnT/120);
+  if(n>0){
+    // pulse: grows briefly on each new digit
+    const phase=(respawnT%120)/120;
+    const sz=Math.round(44-phase*8); // starts large, shrinks into next beat
+    pxt(String(n),W/2,H/2+16,sz,'#ffdd00','center','#ffaa00');
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── HUD ────────────────────────────────────────────────────
+function drawHUD(){
+  // Progress bar
+  const prog=Math.min(1,worldX/(levelWidth-W));
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(W/2-102,H-16,204,12);
+  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(W/2-102,H-16,204,1);
+  const barCol=prog>.8?T.accent2:T.accent;
+  ctx.fillStyle=barCol;ctx.fillRect(W/2-101,H-15,Math.floor(prog*202),10);
+  ctx.fillStyle='rgba(255,255,255,0.3)';ctx.fillRect(W/2-101,H-15,Math.floor(prog*202),1);
+
+  // Level label
+  pxt('LV'+level,W/2-136,H-29,11,T.accent,null,T.accent);
+
+  // Distance to goal
+  const distLeft=Math.max(0,Math.floor((goalX-worldX-player.x)/50));
+  if(distLeft>0)pxt(distLeft+'m',W/2+108,H-29,10,'rgba(255,255,255,0.4)');
+
+  // Skip button (top-right corner) — disabled
+  const sbx=W-72,sby=6,sbw=66,sbh=18;
+  ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(sbx,sby,sbw,sbh);
+  ctx.fillStyle='#44444488';ctx.fillRect(sbx,sby,sbw,1);ctx.fillRect(sbx,sby+sbh-1,sbw,1);
+  ctx.fillRect(sbx,sby,1,sbh);ctx.fillRect(sbx+sbw-1,sby,1,sbh);
+  pxt('SKIP >',sbx+sbw/2,sby+4,7,'#555555','center');
+}
+
+// ── GAME SCREEN ────────────────────────────────────────────
+function drawGame(){
+  drawSky();
+  drawBricks();
+  drawCeiling();
+  drawPlatforms();
+  drawHidespots();
+  drawFloor();
+  drawGoal();
+  drawTurrets();
+  drawBullets();
+  for(const g of guards)drawGuard(g);
+  drawAlertBubbles();
+  drawTongue();
+  drawPlayer();
+  // ── Draw thong pickups ──
+  for(const tp of thongPickups){
+    if(tp.collected)continue;
+    tp.bobT=(tp.bobT||0)+0.06;
+    const by=tp.y+Math.sin(tp.bobT)*3;
+    const tx2=tp.x-worldX;
+    if(tx2<-40||tx2>W+40)continue;
+    ctx.save();
+    // Glow
+    ctx.shadowColor='#ff88cc';ctx.shadowBlur=8;
+    // Waistband
+    ctx.fillStyle='#f090b0';ctx.fillRect(tx2,by+5,16,5);
+    ctx.fillStyle='#ffcce0';ctx.fillRect(tx2,by+5,16,2);
+    // Scallop lace (3 scallops)
+    ctx.fillStyle='#e87aaa';
+    for(let s=0;s<3;s++){ctx.fillRect(tx2+s*5,by+2,4,3);ctx.fillRect(tx2+s*5+1,by,2,2);}
+    // V panel
+    ctx.fillStyle='#f090b0';
+    [[1,8,4],[3,6,4],[5,4,2]].forEach(([ox,oy,w])=>ctx.fillRect(tx2+ox,by+oy,w,2));
+    // Sparkle
+    if(Math.floor(Date.now()/300)%2===0){
+      ctx.fillStyle='#fff';
+      ctx.fillRect(tx2-2,by+7,2,2);ctx.fillRect(tx2+17,by+7,2,2);
+      ctx.fillRect(tx2+7,by-2,2,2);
+    }
+    ctx.shadowBlur=0;ctx.restore();
+  }
+
+  // ── Draw Lickalotapus Coins ──
+  for(const c of coins){
+    if(c.collected)continue;
+    c.bobT=(c.bobT||0)+0.05;
+    c.spin=(c.spin||0)+0.08;
+    const cx=c.x-worldX;
+    if(cx<-20||cx>W+20)continue;
+    const cy=c.y-8+Math.sin(c.bobT)*3;
+    // Squash horizontally to simulate spin (coin face→edge→face)
+    const scaleX=Math.abs(Math.cos(c.spin));
+    const cw=Math.max(2,Math.round(10*scaleX));
+    const cx0=cx+5-cw/2;
+    ctx.save();
+    ctx.shadowColor='#ffd700';ctx.shadowBlur=10;
+    // Coin body
+    ctx.fillStyle=scaleX>0.5?'#ffd700':'#e6a800';
+    ctx.fillRect(cx0,cy,cw,10);
+    // Rim highlight
+    if(scaleX>0.4){
+      ctx.fillStyle='#ffe566';
+      ctx.fillRect(cx0,cy,cw,2);
+      ctx.fillRect(cx0,cy+8,cw,2);
+    }
+    // "L" detail on face only
+    if(scaleX>0.65){
+      ctx.fillStyle='#b8860b';
+      ctx.fillRect(cx+2,cy+2,2,6);
+      ctx.fillRect(cx+2,cy+7,4,2);
+    }
+    ctx.shadowBlur=0;ctx.restore();
+  }
+
+  // ── Draw heart pickup ──
+  if(heartPickup&&!heartPickup.collected){
+    heartPickup.bobT=(heartPickup.bobT||0)+0.06;
+    const hby=heartPickup.y+Math.sin(heartPickup.bobT)*3;
+    const hbx=heartPickup.x-worldX;
+    if(hbx>=-20&&hbx<=W+20){
+      ctx.save();
+      ctx.shadowColor='#ff4466';ctx.shadowBlur=10;
+      // Pixel heart shape (14×14 grid)
+      ctx.fillStyle='#ff2244';
+      [[2,0,4],[7,0,4],[1,2,12],[0,4,14],[0,6,14],[1,8,12],[2,10,10],[4,12,6],[6,14,2]].forEach(([ox,oy,w])=>ctx.fillRect(hbx+ox,hby+oy,w,2));
+      // Highlight
+      ctx.fillStyle='#ff88aa';
+      ctx.fillRect(hbx+3,hby+2,2,2);ctx.fillRect(hbx+8,hby+2,2,2);
+      ctx.shadowBlur=0;ctx.restore();
+    }
+  }
+
+  drawParticles();
+  drawHUD();
+
+  // Caught flash
+  if(caughtFlash>0){
+    ctx.fillStyle=`rgba(220,0,30,${(caughtFlash/110)*.55})`;
+    ctx.fillRect(0,0,W,H);
+    if(caughtFlash>70){
+      pxt('BUSTED!',W/2,H/2-14,22,'#ff2244','center','#ff0022');
+      pxt(lives>0?lives+' LIVES LEFT':'GAME OVER',W/2,H/2+20,9,'#fff','center');
+    }
+  }
+
+  // Level clear
+  if(clearTimer>0){
+    const a=Math.min(.8,(150-clearTimer)/50);
+    ctx.fillStyle=`rgba(0,0,0,${a})`;ctx.fillRect(0,0,W,H);
+    pxt('PACKAGE',W/2,H/2-40,18,T.accent,'center',T.accent);
+    pxt('DELIVERED!',W/2,H/2-8,18,T.accent,'center',T.accent);
+    ctx.font='24px serif';ctx.textAlign='center';ctx.textBaseline='top';
+    ctx.fillText(item?item.emoji:'📦',W/2,H/2+26);
+    pxt('+'+(300+level*80)+' PTS',W/2,H/2+60,9,'#fff','center');
+    const lb=levelBonuses;
+    if(lb){
+      const gc=lb.guards?'#55ff88':'rgba(255,255,255,0.35)';
+      const tc=lb.turrets?'#55ff88':'rgba(255,255,255,0.35)';
+      const cc=lb.coins?'#ffd700':'rgba(255,255,255,0.35)';
+      pxt((lb.guards?'✓':'✗')+' ALL GUARDS PUDDLED '+(lb.guards?'+1000':''),W/2,H/2+80,6,gc,'center');
+      pxt((lb.turrets?'✓':'✗')+' ALL TURRETS PUDDLED '+(lb.turrets?'+1000':''),W/2,H/2+96,6,tc,'center');
+      pxt((lb.coins?'✓':'✗')+' ALL COINS COLLECTED '+(lb.coins?'+500':''),W/2,H/2+112,6,cc,'center');
+    }
+    if(level<10)pxt('LEVEL '+(level+1)+' LOADING...',W/2,H/2+132,7,'rgba(255,255,255,0.5)','center');
+  }
+}
+
+// ── TITLE ──────────────────────────────────────────────────
+// ── Draw a large scaled Lickalotapus centered on cx,cy with scale s ──────────
+function drawLickalotapus(cx,cy,s,facing,tongueLen,blinkT,walkT){
+  const d=facing;
+  const BW=Math.round(22*s),BH=Math.round(24*s);
+  const HW=Math.round(20*s),HH=Math.round(18*s);
+  const x=cx-BW/2,y=cy-BH-HH+4;
+  const legOsc=Math.sin((walkT||0)*.22)*Math.round(3*s);
+
+  function fr(rx,ry,rw,rh){ctx.fillRect(Math.round(x+rx*s),Math.round(y+ry*s),Math.max(1,Math.round(rw*s)),Math.max(1,Math.round(rh*s)));}
+  function arc(ax,ay,r){ctx.beginPath();ctx.arc(Math.round(x+ax*s),Math.round(y+ay*s),Math.max(1,Math.round(r*s)),0,Math.PI*2);ctx.fill();}
+
+  // Drop shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath();ctx.ellipse(cx+Math.round(2*s),cy+Math.round(4*s),Math.round((BW/2+4)*s/s*s),Math.round(5*s),0,0,Math.PI*2);ctx.fill();
+
+  // Feet
+  const darkPaw='#2a2a38';
+  ctx.fillStyle=darkPaw;
+  const fy=HH+BH-8;
+  fr(d>0?1:BW-10,fy+legOsc,10,7);
+  fr(d>0?BW-9:1,fy-legOsc,10,7);
+  for(let i=0;i<3;i++){fr(d>0?1+i*3:BW-10+i*3,fy+legOsc+6,2,2);fr(d>0?BW-9+i*3:1+i*3,fy-legOsc+6,2,2);}
+
+  // Body shadow
+  const bY=HH-4;
+  ctx.fillStyle='#3d2810';fr(-1,bY+1,BW+2,BH+2);
+  // Body fur
+  ctx.fillStyle='#6b4228';fr(0,bY,BW,BH);
+  // Corner rounding
+  ctx.fillStyle='#3d2810';
+  fr(0,bY,2,2);fr(BW-2,bY,2,2);fr(0,bY+BH-2,2,2);fr(BW-2,bY+BH-2,2,2);
+  // Tan belly
+  ctx.fillStyle='#c8a07a';fr(5,bY+4,BW-10,BH-5);
+  ctx.fillStyle='rgba(255,220,180,0.2)';fr(6,bY+5,4,BH-8);
+  // Fur marks
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  fr(2,bY+3,1,3);fr(BW-3,bY+5,1,3);fr(4,bY+BH-5,1,2);
+
+  // Arms
+  ctx.fillStyle='#3d2810';
+  const aY=bY+4;
+  if(d>0){fr(-4,aY,7,6);fr(BW-2,aY+2,6,6);}
+  else{fr(BW-3,aY,7,6);fr(-4,aY+2,6,6);}
+  ctx.fillStyle=darkPaw;
+  if(d>0){fr(-4,aY+4,7,4);fr(BW-2,aY+4,6,4);}
+  else{fr(BW-3,aY+4,7,4);fr(-4,aY+4,6,4);}
+
+  // Tail — wide flat beaver paddle
+  const tW=30,tH=30;
+  const tX=d>0?-tW+2:BW-2;
+  // Shadow
+  ctx.fillStyle='#0d0d14';
+  fr(tX+2,bY+BH-tH+2,tW,tH);
+  // Main paddle
+  ctx.fillStyle='#1a1a2a';
+  fr(tX,bY+BH-tH,tW,tH);
+  // Lighter face
+  ctx.fillStyle='#252535';
+  fr(tX+2,bY+BH-tH+2,tW-4,tH-4);
+  // Scale grid 3x2
+  ctx.fillStyle='rgba(255,255,255,0.1)';
+  for(let row=0;row<3;row++) for(let col=0;col<4;col++)
+    fr(tX+3+col*6,bY+BH-tH+4+row*8,4,5);
+  // Edge highlight
+  ctx.fillStyle='rgba(255,255,255,0.06)';
+  fr(tX,bY+BH-tH,2,tH);
+
+  // Head shadow
+  const hX=d>0?1:0;
+  ctx.fillStyle='#3d2810';fr(hX-1,1,HW+1,HH+1);
+  // Head fur
+  ctx.fillStyle='#6b4228';fr(hX,0,HW,HH);
+  ctx.fillStyle='#3d2810';fr(hX,0,2,2);fr(hX+HW-2,0,2,2);
+  ctx.fillStyle='rgba(255,200,150,0.08)';fr(hX+2,1,HW-4,4);
+
+  // Ears
+  ctx.fillStyle='#3d2810';fr(hX+2,-4,6,5);fr(hX+HW-7,-4,6,5);
+  ctx.fillStyle='#6b4228';fr(hX+3,-3,4,4);fr(hX+HW-6,-3,4,4);
+  ctx.fillStyle='rgba(200,100,120,0.5)';fr(hX+4,-2,2,2);fr(hX+HW-5,-2,2,2);
+
+  // Eyes
+  const e1X=d>0?HW-8:2,e2X=d>0?HW-14:8;
+  ctx.fillStyle='#f0f0f0';fr(hX+e1X,3,8,8);fr(hX+e2X,3,8,8);
+  ctx.fillStyle='#1a1a1a';
+  const pdx=d>0?2:0;
+  fr(hX+e1X+pdx+1,5,4,4);fr(hX+e2X+pdx+1,5,4,4);
+  ctx.fillStyle='#ffffff';fr(hX+e1X+pdx,4,2,2);fr(hX+e2X+pdx,4,2,2);
+  if(blinkT%45<3){ctx.fillStyle='#6b4228';fr(hX+e1X,3,8,4);fr(hX+e2X,3,8,4);}
+  // Stress lines
+  ctx.fillStyle='rgba(0,0,0,0.6)';fr(hX+e1X-1,2,1,2);fr(hX+e2X+9,2,1,2);
+
+  // Snout
+  const snX=d>0?hX+HW-7:hX-1;
+  ctx.fillStyle='#2a2a3a';fr(snX,8,9,8);
+  ctx.fillStyle='rgba(100,100,150,0.4)';fr(snX+1,8,7,2);
+  ctx.fillStyle='#1a1a28';fr(snX+1,10,2,2);fr(snX+5,10,2,2);
+  // Whiskers
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  fr(d>0?snX-8:snX+9,10,8,1);fr(d>0?snX-6:snX+9,12,6,1);
+
+  // Mouth open (tongue out)
+  const mouthOpen=tongueLen>0;
+  if(mouthOpen){
+    ctx.fillStyle='#c0203a';fr(snX,14,9,6);
+    ctx.fillStyle='#f0ead8';
+    fr(snX+1,14,3,3);fr(snX+5,14,3,3);
+    fr(snX+1,17,3,3);fr(snX+5,17,3,3);
+  } else {
+    ctx.fillStyle='#1a1a28';fr(snX,14,9,3);
+    ctx.fillStyle='#f0ead8';fr(snX+1,14,3,2);fr(snX+5,14,3,2);
+  }
+
+  // Tongue (drawn relative to scaled snout tip)
+  if(tongueLen>0){
+    const tOX=Math.round(x+(snX+(d>0?9:-0))*s);
+    const tOY=Math.round(y+(17)*s);
+    const tTX=tOX+Math.round(d*tongueLen*s);
+    ctx.save();
+    ctx.strokeStyle='rgba(255,100,140,0.3)';ctx.lineWidth=Math.round(10*s);ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(tOX,tOY);ctx.lineTo(tTX,tOY+Math.round(3*s));ctx.stroke();
+    ctx.strokeStyle='#e8607a';ctx.lineWidth=Math.round(6*s);
+    ctx.beginPath();ctx.moveTo(tOX,tOY);ctx.lineTo(tTX,tOY+Math.round(3*s));ctx.stroke();
+    ctx.strokeStyle='#ff9aaa';ctx.lineWidth=Math.round(2*s);
+    ctx.beginPath();ctx.moveTo(tOX,tOY-Math.round(1*s));ctx.lineTo(tTX,tOY+Math.round(2*s));ctx.stroke();
+    ctx.fillStyle='#ff6688';ctx.beginPath();ctx.arc(tTX,tOY+Math.round(3*s),Math.round(5*s),0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffaacc';ctx.beginPath();ctx.arc(tTX-Math.round(1*s),tOY+Math.round(2*s),Math.round(2.5*s),0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawTitle(){
+  // ── Deep dramatic background ──────────────────────────────
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#1e2540');bg.addColorStop(0.5,'#1e1535');bg.addColorStop(1,'#2a1230');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+
+  // Animated starfield
+  for(let i=0;i<70;i++){
+    const sx=((i*173+frameCount*.15*(i%3===0?1:0.4))%(W+10))%W;
+    const sy=(i*97+5)%H;
+    const twinkle=Math.sin(frameCount*.04+i*0.8)*.5+.5;
+    ctx.fillStyle=`rgba(255,255,255,${twinkle*(i%4===0?.9:.4)})`;
+    ctx.fillRect(sx,sy,i%6===0?2:1,i%6===0?2:1);
+  }
+
+  // Scanlines
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
+
+  // Left half: title content
+  const leftCX=210;
+
+  // ── BIG LOGO ──────────────────────────────────────────────
+  // Glowing backdrop for title
+  const logoGlow=ctx.createRadialGradient(leftCX,80,10,leftCX,80,160);
+  logoGlow.addColorStop(0,'rgba(255,180,0,0.18)');logoGlow.addColorStop(1,'transparent');
+  ctx.fillStyle=logoGlow;ctx.fillRect(0,0,leftCX*2,H);
+
+  // Title outline box
+  ctx.strokeStyle='rgba(255,200,0,0.3)';ctx.lineWidth=2;
+  ctx.strokeRect(22,22,leftCX*2-40,130);
+  ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(23,23,leftCX*2-42,128);
+
+  // Top two title lines — driven by theme name so slime mode shows "SLIME / POCKETS"
+  const[titleWord1,titleWord2]=T.name.split(' ');
+  pxt(titleWord1,leftCX,38,22,T.accent,'center',T.accent);
+  pxt(titleWord2,leftCX,70,22,T.accent,'center',T.accent);
+  pxt("LADIES' NIGHT",leftCX,102,11,'#ff66bb','center','#ff2299');
+  // Subtitle
+  // ── Legs hanging off RIGHT edge of title box ───────────────
+  (function drawLegsAndThong(){
+    const skin  = '#f5c8a0';
+    const skinD = '#d9966a';
+    const skinS = '#fde0c8';
+    const pink  = '#f090b0';
+    const pinkD = '#d85888';
+    const pinkL = '#ffcce0';
+    const lace  = '#e87aaa';
+
+    // Anchor: right edge of title box is ~x=402, top of box y=22
+    // Thighs sit ON the box top, hanging rightward over the edge
+    // Box right edge acts as the "ledge" they hang off
+    const ledgeX = 398; // right edge of title box
+    const ledgeY = 22;  // top of box (thighs rest here)
+    const boxBot = 152; // bottom of title box
+
+    // ── BACK LEG (left in scene) — hangs straight down ────────
+    // Thigh: horizontal, resting on top of box, extends to ledge edge
+    ctx.fillStyle=skinD;
+    ctx.fillRect(320, ledgeY+2, 82, 26);
+    ctx.fillStyle=skin;
+    ctx.fillRect(318, ledgeY,   82, 25);
+    // Thigh highlight
+    ctx.fillStyle=skinS;
+    ctx.fillRect(322, ledgeY+2, 30, 6);
+    ctx.fillRect(322, ledgeY+2, 6, 14);
+
+    // Knee — right at ledge edge
+    ctx.fillStyle=skinD; ctx.fillRect(ledgeX-4, ledgeY+18, 20, 16);
+    ctx.fillStyle=skin;  ctx.fillRect(ledgeX-5, ledgeY+17, 20, 15);
+    ctx.fillStyle=skinS; ctx.fillRect(ledgeX-3, ledgeY+18,  7,  5);
+
+    // Shin — tapers from 20px at knee to 12px at ankle
+    for(let i=0;i<13;i++){
+      const sw=Math.round(20-i*0.62);
+      const off=Math.round((20-sw)/2);
+      ctx.fillStyle=skinD; ctx.fillRect(ledgeX-3+off, ledgeY+33+i*9, sw, 10);
+      ctx.fillStyle=skin;  ctx.fillRect(ledgeX-4+off, ledgeY+32+i*9, sw,  9);
+    }
+    ctx.fillStyle=skinS;
+    for(let i=0;i<7;i++) ctx.fillRect(ledgeX-2, ledgeY+34+i*9, 3, 6);
+
+    // Ankle + back foot — shaped with heel, arch, ball, toes
+    const bAY = ledgeY+33+13*9;
+    const bfx = ledgeX-4; // foot left edge
+    // Ankle block (narrow)
+    ctx.fillStyle=skinD; ctx.fillRect(bfx+2, bAY,   14, 10);
+    ctx.fillStyle=skin;  ctx.fillRect(bfx+1, bAY-1, 14, 10);
+    ctx.fillStyle=skinS; ctx.fillRect(bfx+2, bAY,    5,  4);
+    // Heel (widest, back of foot)
+    ctx.fillStyle=skinD; ctx.fillRect(bfx,   bAY+8, 10, 12);
+    ctx.fillStyle=skin;  ctx.fillRect(bfx-1, bAY+7, 10, 12);
+    // Mid-foot / arch (slightly narrower — arch indent on bottom)
+    ctx.fillStyle=skinD; ctx.fillRect(bfx+8, bAY+10, 10, 8);
+    ctx.fillStyle=skin;  ctx.fillRect(bfx+7, bAY+9,  10, 8);
+    // Ball of foot (wider again before toes)
+    ctx.fillStyle=skinD; ctx.fillRect(bfx+15, bAY+9,  12, 10);
+    ctx.fillStyle=skin;  ctx.fillRect(bfx+14, bAY+8,  12, 10);
+    // Arch shadow (bottom of foot indent)
+    ctx.fillStyle=skinD; ctx.fillRect(bfx+8, bAY+16,  8,  3);
+    // Foot top highlight
+    ctx.fillStyle=skinS; ctx.fillRect(bfx,   bAY+8,   4,  5);
+    ctx.fillStyle=skinS; ctx.fillRect(bfx+15,bAY+9,   5,  4);
+    // Toes — graduated sizes (big toe largest)
+    const bToeW=[7,6,5,5], bToeH=[7,7,6,6];
+    for(let t=0;t<5;t++){
+      const tx2=bfx+14+t*5, ty2=bAY+16;
+      ctx.fillStyle=skinD; ctx.fillRect(tx2+1, ty2+1, bToeW[t],   bToeH[t]);
+      ctx.fillStyle=skin;  ctx.fillRect(tx2,   ty2,   bToeW[t],   bToeH[t]);
+      ctx.fillStyle=skinS; ctx.fillRect(tx2,   ty2,   bToeW[t]-1, 2);
+      ctx.fillStyle='#ff4488'; ctx.fillRect(tx2, ty2, bToeW[t], 2);
+    }
+
+    // ── FRONT LEG — crosses over, foot swings out to right ────
+    // Thigh: slightly overlapping back leg, same level
+    ctx.fillStyle=skinD;
+    ctx.fillRect(340, ledgeY+4, 76, 24);
+    ctx.fillStyle=skin;
+    ctx.fillRect(338, ledgeY+2, 76, 23);
+    ctx.fillStyle=skinS;
+    ctx.fillRect(342, ledgeY+4, 28, 5);
+    ctx.fillRect(342, ledgeY+4, 5, 12);
+
+    // Knee — front leg, slightly further right
+    const fkx = ledgeX+4;
+    ctx.fillStyle=skinD; ctx.fillRect(fkx,   ledgeY+17, 22, 16);
+    ctx.fillStyle=skin;  ctx.fillRect(fkx-1, ledgeY+16, 22, 15);
+    ctx.fillStyle=skinS; ctx.fillRect(fkx+14,ledgeY+18,  6,  5);
+
+    // Shin — tapers from 20px at knee to 12px at ankle, angles right
+    for(let i=0;i<11;i++){
+      const shift = Math.floor(i*2.2);
+      const sw=Math.round(20-i*0.73);
+      const off=Math.round((20-sw)/2);
+      ctx.fillStyle=skinD; ctx.fillRect(fkx+shift+1+off, ledgeY+32+i*9, sw, 10);
+      ctx.fillStyle=skin;  ctx.fillRect(fkx+shift+off,   ledgeY+31+i*9, sw,  9);
+    }
+    ctx.fillStyle=skinS;
+    for(let i=0;i<6;i++){
+      const shift=Math.floor(i*2.2);
+      const sw=Math.round(20-i*0.73);
+      ctx.fillRect(fkx+shift+Math.round((20-sw)/2)+sw-5, ledgeY+33+i*9, 3, 5);
+    }
+
+    // Ankle + front foot — pointing right, dangling, shaped heel→arch→ball→toes
+    const fAX = fkx + Math.floor(11*2.2);
+    const fAY = ledgeY+32+11*9;
+    // Ankle (narrow top)
+    ctx.fillStyle=skinD; ctx.fillRect(fAX,   fAY,    14,  10);
+    ctx.fillStyle=skin;  ctx.fillRect(fAX-1, fAY-1,  14,  10);
+    ctx.fillStyle=skinS; ctx.fillRect(fAX,   fAY,     5,   4);
+    // Heel (back/top of foot — foot pointing right so heel is leftmost)
+    ctx.fillStyle=skinD; ctx.fillRect(fAX,   fAY+8,  10,  13);
+    ctx.fillStyle=skin;  ctx.fillRect(fAX-1, fAY+7,  10,  13);
+    // Mid-foot arch (slightly thinner bottom row = arch indent)
+    ctx.fillStyle=skinD; ctx.fillRect(fAX+8,  fAY+10, 10,  9);
+    ctx.fillStyle=skin;  ctx.fillRect(fAX+7,  fAY+9,  10,  9);
+    // Ball of foot
+    ctx.fillStyle=skinD; ctx.fillRect(fAX+16, fAY+9,  12,  11);
+    ctx.fillStyle=skin;  ctx.fillRect(fAX+15, fAY+8,  12,  11);
+    // Arch shadow
+    ctx.fillStyle=skinD; ctx.fillRect(fAX+8,  fAY+17,  8,   3);
+    // Highlights
+    ctx.fillStyle=skinS; ctx.fillRect(fAX,    fAY+8,   4,   5);
+    ctx.fillStyle=skinS; ctx.fillRect(fAX+16, fAY+9,   5,   4);
+    // Toes pointing right — graduated sizes, big toe at top
+    const fToeW=[7,6,5,5], fToeH=[7,7,6,6];
+    for(let t=0;t<5;t++){
+      const tx2=fAX+25, ty2=fAY+8+t*4;
+      ctx.fillStyle=skinD; ctx.fillRect(tx2+fToeW[t], ty2+1, fToeW[t],   fToeH[t]);
+      ctx.fillStyle=skin;  ctx.fillRect(tx2+fToeW[t]-1, ty2, fToeW[t],   fToeH[t]);
+      ctx.fillStyle=skinS; ctx.fillRect(tx2+fToeW[t]-1, ty2, fToeW[t],   2);
+      ctx.fillStyle='#ff4488'; ctx.fillRect(tx2+fToeW[t]-1, ty2, fToeW[t], 2);
+    }
+
+    // ── THONG — dangling off the front foot's big toe ──────────
+    // fAX/fAY = front foot anchor. Big toe tip is around fAX+18, fAY+14
+    const toeTipX = fAX + 19;
+    const toeTipY = fAY + 19;
+
+    // Waistband string looped over the big toe — small loop
+    ctx.fillStyle=pink;
+    ctx.fillRect(toeTipX-2, toeTipY,   6, 3);   // string over toe
+    ctx.fillRect(toeTipX-1, toeTipY+2, 4, 3);   // loop under toe
+
+    // Left strap dropping from loop
+    ctx.fillStyle=pink;
+    ctx.fillRect(toeTipX-2, toeTipY+5,  3, 10);
+    ctx.fillRect(toeTipX-4, toeTipY+14, 3, 8);
+    ctx.fillRect(toeTipX-6, toeTipY+21, 3, 8);
+
+    // Right strap dropping from loop
+    ctx.fillRect(toeTipX+2, toeTipY+5,  3, 10);
+    ctx.fillRect(toeTipX+4, toeTipY+14, 3, 8);
+    ctx.fillRect(toeTipX+6, toeTipY+21, 3, 8);
+
+    // Waistband — spans between the two straps at bottom of drop
+    const wbY = toeTipY + 29;
+    const wbW = 28;
+    const wbX = toeTipX - wbW/2;
+
+    // Scalloped lace waistband
+    ctx.fillStyle=lace;
+    const sc=6, sw2=wbW/sc;
+    for(let i=0;i<sc;i++){
+      const sx2=wbX+i*sw2;
+      ctx.fillRect(sx2,   wbY,   sw2-1, 4);
+      ctx.fillRect(sx2+1, wbY-3, sw2-3, 3);
+      ctx.fillRect(sx2+2, wbY-5, sw2-5, 2);
+    }
+    ctx.fillStyle=pinkL;
+    for(let i=0;i<sc;i++) ctx.fillRect(wbX+i*sw2+2, wbY-4, sw2-6, 1);
+
+    // Waistband body bar
+    ctx.fillStyle=pink;
+    ctx.fillRect(wbX, wbY+4, wbW, 6);
+    ctx.fillStyle=pinkL; ctx.fillRect(wbX, wbY+4, wbW, 2);
+    ctx.fillStyle=pinkD; ctx.fillRect(wbX, wbY+9, wbW, 1);
+
+    // V panel hanging below waistband — swinging with gravity
+    const pvx = wbX+4, pvy = wbY+10, pvw = wbW-8;
+    ctx.fillStyle=pink;
+    [[0,pvw],[1,pvw-2],[2,pvw-5],[3,pvw-8],
+     [5,pvw-11],[7,pvw-14],[9,pvw-16],[11,6],[13,3],[14,2]
+    ].forEach(([off,w],i)=>{
+      if(w<=0)return;
+      ctx.fillRect(pvx+off, pvy+i*4, w, 3);
+    });
+    // Centre seam
+    ctx.fillStyle=pinkD;
+    [[pvw/2-3,6],[pvw/2-2,5],[pvw/2-2,4],[pvw/2-1,3],[pvw/2-1,2]].forEach(([off,w],i)=>{
+      ctx.fillRect(pvx+off, pvy+4+i*4, w, 3);
+    });
+    // Lace dots
+    ctx.fillStyle='rgba(216,88,136,0.3)';
+    [[2,3],[7,2],[4,10],[9,9],[5,17]].forEach(([dx,dy])=>{
+      ctx.fillRect(pvx+dx, pvy+dy, 3, 3);
+    });
+    // Fabric sheen
+    ctx.fillStyle='rgba(255,220,235,0.25)';
+    [[1,3,8,2],[2,7,6,2],[3,11,4,2]].forEach(([off,dy,w])=>{
+      ctx.fillRect(pvx+off, pvy+dy, w, 2);
+    });
+  })();
+
+  pxt('FEAT. LICKALOTAPUS',leftCX,126,11,'rgba(255,180,100,0.75)','center');
+
+  // Marquee lights around title box
+  {
+    const bx1=22,by1=22,bx2=leftCX*2-18,by2=152; // box edges (bx2=402,by2=152)
+    const bw=bx2-bx1,bh=by2-by1;                  // 380 × 130
+    // Points ordered clockwise: top L→R, right T→B, bottom R→L, left B→T
+    const mp=[];
+    for(let i=0;i<=5;i++) mp.push([bx1+Math.round(bw*i/5),by1]);   // top (6 pts)
+    for(let j=1;j<=3;j++) mp.push([bx2,by1+Math.round(bh*j/3)]);   // right (3 pts, TR excluded)
+    for(let i=4;i>=0;i--) mp.push([bx1+Math.round(bw*i/5),by2]);   // bottom (5 pts, BR excluded)
+    for(let j=2;j>=1;j--) mp.push([bx1,by1+Math.round(bh*j/3)]);   // left (2 pts, corners excluded)
+    const n=mp.length;
+    const mT=Math.floor(frameCount/18)%n;
+    mp.forEach(([lx,ly],li)=>{
+      const dist=Math.min((li-mT+n)%n,(mT-li+n)%n);
+      const alpha=dist===0?1:dist===1?0.65:dist===2?0.35:0.12;
+      ctx.fillStyle=`rgba(255,220,40,${alpha})`;
+      ctx.fillRect(lx-3,ly-3,6,6);
+      if(dist===0){ctx.fillStyle='rgba(255,255,220,0.95)';ctx.fillRect(lx-1,ly-1,2,2);}
+    });
+  }
+
+  // ── Preview item cycling ──────────────────────────────────
+  const pool=slimeMode?SLIME_ITEMS:PRISON_ITEMS;
+  const preview=pool[Math.floor(Date.now()/1100)%pool.length];
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(leftCX-160,162,320,28);
+  ctx.strokeStyle='rgba(255,200,0,0.2)';ctx.lineWidth=1;ctx.strokeRect(leftCX-160,162,320,28);
+  pxt('SMUGGLING: '+preview.emoji+' '+preview.name,leftCX,170,11,'rgba(210,210,180,0.75)','center');
+
+  // ── PRESS START blink ─────────────────────────────────────
+  if(Math.floor(Date.now()/500)%2===0){
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(leftCX-130,195,260,20);
+    pxt('PRESS SPACE TO START',leftCX,201,8,T.accent,'center',T.accent);
+  }
+
+  // ── Controls panel ───────────────────────────────────────
+  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(leftCX-135,222,270,118);
+  ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.lineWidth=1;ctx.strokeRect(leftCX-135,222,270,118);
+  pxt('CONTROLS',leftCX,228,12,'rgba(255,255,255,0.4)','center');
+  const ctrls=[
+    ['A / D','MOVE'],['W / L-CLICK','JUMP'],
+    ['S / SPC','DUCK + HIDE'],['R-CLICK','LICK ATTACK'],
+  ];
+  ctrls.forEach(([k,v],i)=>{
+    pxt(k,leftCX-105,248+i*20,10,T.accent2);
+    pxt(v,leftCX+20,248+i*20,10,'rgba(200,200,200,0.7)');
+  });
+
+  // Footer badges
+  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(leftCX-115,352,86,20);
+  pxt('10 LEVELS',leftCX-72,355,11,T.accent2,'center',T.accent2);
+  ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(leftCX+30,352,76,20);
+  pxt('3 LIVES',leftCX+68,355,11,'rgba(255,255,255,0.4)','center');
+
+  // ── RIGHT HALF: Big animated Lickalotapus ─────────────────
+  const charCX=580,charCY=165;
+  const scale=2.6; // 2.6× size
+
+  // Character glow backdrop
+  const charGlow=ctx.createRadialGradient(charCX,charCY,20,charCX,charCY,170);
+  charGlow.addColorStop(0,'rgba(255,100,140,0.15)');charGlow.addColorStop(1,'transparent');
+  ctx.fillStyle=charGlow;ctx.fillRect(charCX-170,charCY-200,340,370);
+
+  // Tongue animation cycle: flick out and retract over 90 frames
+  const lickCycle=frameCount%90;
+  let titleTongueLen=0;
+  if(lickCycle<15)      titleTongueLen=lickCycle/15*45;   // extend 0→45
+  else if(lickCycle<45) titleTongueLen=45;                 // hold out
+  else if(lickCycle<60) titleTongueLen=(60-lickCycle)/15*45; // retract 45→0
+  // else 0 (resting)
+
+  const titleBlink=Math.floor(Date.now()/40)%60;
+  const titleWalk=lickCycle<60?frameCount:0;
+  drawLickalotapus(charCX,charCY,scale,-1,titleTongueLen,titleBlink,titleWalk);
+
+  // Name badge under character
+
+  // Pink particles always orbiting character's head
+  const headY=charCY-Math.round(38*scale);
+  for(let i=0;i<6;i++){
+    const angle=frameCount*.045+i*(Math.PI*2/6);
+    const orbitR=Math.round(42*scale);
+    const px2=charCX+Math.cos(angle)*orbitR;
+    const py2=headY+Math.sin(angle)*orbitR*0.45;
+    const pulse=Math.sin(frameCount*.08+i*1.1)*.5+.5;
+    ctx.globalAlpha=0.35+pulse*0.55;
+    ctx.fillStyle=i%2===0?'#ff6688':'#ffaacc';
+    const sz=i%3===0?5:3;
+    ctx.fillRect(Math.round(px2)-sz/2,Math.round(py2)-sz/2,sz,sz);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── GAME OVER ──────────────────────────────────────────────
+function drawDead(){
+  ctx.fillStyle='#020004';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(180,0,30,0.08)';
+  for(let y2=0;y2<H;y2+=4)ctx.fillRect(0,y2,W,2);
+
+  // Red vignette
+  const vg=ctx.createRadialGradient(W/2,H/2,60,W/2,H/2,W/2);
+  vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(150,0,0,0.5)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+  pxt('GAME OVER',W/2,80,24,'#ff2244','center','#ff0022');
+  ctx.fillStyle='rgba(255,0,30,0.15)';ctx.fillRect(W/2-180,75,360,35);
+
+  pxt('SCORE: '+score.toString().padStart(7,'0'),W/2,148,11,'#fff','center');
+  pxt('LEVEL REACHED: '+level,W/2,178,8,'rgba(200,200,200,0.7)','center');
+  pxt(item?'ITEM: '+item.emoji+' '+item.name:'',W/2,202,7,'rgba(150,150,150,0.6)','center');
+
+  ctx.fillStyle='rgba(255,0,30,0.1)';ctx.fillRect(W/2-130,235,260,20);
+  pxt('YOU GOT CAUGHT...',W/2,237,7,'#ff6666','center');
+
+  if(Math.floor(Date.now()/600)%2===0)
+    pxt('PRESS SPACE TO RETURN TO MENU',W/2,298,7,T.accent,'center',T.accent);
+}
+
+// ── WIN SCREEN ─────────────────────────────────────────────
+function drawWin(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,slimeMode?'#001a00':'#000820');
+  g.addColorStop(1,'#000');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+
+  // Confetti
+  const t2=(Date.now()/900)%4;
+  for(let i=0;i<36;i++){
+    const a=(i/36)*Math.PI*2,r=t2*180;
+    const px2=W/2+Math.cos(a)*r,py2=H/2+Math.sin(a)*r*.4;
+    ctx.globalAlpha=Math.max(0,1-t2/4)*(.5+Math.sin(t2*3+i)*.4);
+    const cols=[T.accent,T.accent2,'#fff','#ff8888',slimeMode?'#00ffaa':'#88aaff'];
+    ctx.fillStyle=cols[i%cols.length];
+    ctx.fillRect(px2,py2,i%3===0?8:5,i%3===0?8:5);
+  }
+  ctx.globalAlpha=1;
+
+  // Scanlines
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  for(let y2=0;y2<H;y2+=3)ctx.fillRect(0,y2,W,1);
+
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(W/2-200,60,400,60);
+  pxt('YOU DID IT!',W/2,68,22,T.accent,'center',T.accent);
+  pxt('ALL PACKAGES DELIVERED',W/2,103,7,'rgba(255,255,255,0.8)','center');
+
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(W/2-160,142,320,80);
+  pxt('FINAL SCORE',W/2,150,8,'rgba(200,200,200,0.6)','center');
+  pxt(score.toString().padStart(7,'0'),W/2,170,16,T.accent,'center',T.accent);
+  pxt('10 LEVELS COMPLETED',W/2,205,7,T.accent2,'center',T.accent2);
+
+  pxt('A TRUE CRIMINAL MASTERMIND',W/2,256,6,'rgba(150,150,150,0.6)','center');
+
+  if(Math.floor(Date.now()/600)%2===0)
+    pxt('PRESS SPACE TO PLAY AGAIN',W/2,300,7,T.accent,'center',T.accent);
+}
+
+// ── DRAW DISPATCH ──────────────────────────────────────────
+function drawLickGame(){
+  // Background
+  ctx.fillStyle='#0a0005';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,0,80,0.05)';for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,2);
+
+  const licks=lickGame.count;
+  const thongOff=lickGame.thongOff||false;
+  const fallT=lickGame.thongFallT||0;
+
+  // ── Legs — centred right half of screen ───────────────────
+  const legX=320;    // centre-left
+  const legTopY=20;  // start near top
+  const skin='#f5c8a0',skinD='#d9966a',skinS='#fde0c8';
+  const pink='#f090b0',pinkD='#d85888',pinkL='#ffcce0',lace='#e87aaa';
+
+  // Left thigh (back leg)
+  ctx.fillStyle=skinD; ctx.fillRect(legX,    legTopY+2, 26,96);
+  ctx.fillStyle=skin;  ctx.fillRect(legX-1,  legTopY,   26,96);
+  ctx.fillStyle=skinS; ctx.fillRect(legX,    legTopY+2,  7, 36);
+  // Knee — flush, just a 1px narrowing transition, no bump
+  ctx.fillStyle=skin;  ctx.fillRect(legX+1,  legTopY+94, 22, 6);
+  ctx.fillStyle=skinS; ctx.fillRect(legX+1,  legTopY+94,  6, 3);
+  // Left shin — wider at top, tapers down
+  for(let i=0;i<12;i++){
+    const sw=Math.round(24-i*0.8);
+    const off=Math.round((24-sw)/2);
+    ctx.fillStyle=skinD; ctx.fillRect(legX+off,   legTopY+100+i*9, sw+2,10);
+    ctx.fillStyle=skin;  ctx.fillRect(legX+off-1, legTopY+99+i*9,  sw+2, 9);
+  }
+  // Left foot — regular
+  const lfY=legTopY+100+12*9;
+  // Heel
+  ctx.fillStyle=skinD; ctx.fillRect(legX,   lfY+2, 12,10);
+  ctx.fillStyle=skin;  ctx.fillRect(legX-1, lfY+1, 12,10);
+  // Sole
+  ctx.fillStyle=skinD; ctx.fillRect(legX-1, lfY+9, 26, 6);
+  ctx.fillStyle=skin;  ctx.fillRect(legX-2, lfY+8, 26, 6);
+  ctx.fillStyle=skinS; ctx.fillRect(legX-2, lfY+8,  8, 2);
+  // 4 toes
+  const lTW=[7,6,5,4];
+  for(let t=0;t<4;t++){
+    ctx.fillStyle=skinD; ctx.fillRect(legX-2+t*6+1, lfY+1, lTW[t], 8);
+    ctx.fillStyle=skin;  ctx.fillRect(legX-2+t*6,   lfY,   lTW[t], 8);
+    ctx.fillStyle='#ff4488'; ctx.fillRect(legX-2+t*6, lfY, lTW[t], 2);
+  }
+
+  // Right thigh (front leg, overlapping)
+  const rlx=legX+28;
+  ctx.fillStyle=skinD; ctx.fillRect(rlx+1,  legTopY+4, 26,94);
+  ctx.fillStyle=skin;  ctx.fillRect(rlx,    legTopY+2, 26,94);
+  ctx.fillStyle=skinS; ctx.fillRect(rlx+17, legTopY+4,  6, 34);
+  // Knee — flush
+  ctx.fillStyle=skin;  ctx.fillRect(rlx+1,  legTopY+94, 22, 6);
+  ctx.fillStyle=skinS; ctx.fillRect(rlx+14, legTopY+94,  6, 3);
+  // Right shin — wider at top, tapers, angles slightly right
+  for(let i=0;i<12;i++){
+    const sw=Math.round(24-i*0.8);
+    const shift=Math.floor(i*1.4);
+    ctx.fillStyle=skinD; ctx.fillRect(rlx+shift+1, legTopY+100+i*9, sw+2,10);
+    ctx.fillStyle=skin;  ctx.fillRect(rlx+shift,   legTopY+99+i*9,  sw+2, 9);
+  }
+  // Right foot — regular, angled
+  const rfX=rlx+Math.floor(12*1.4);
+  const rfY=legTopY+100+12*9;
+  // Heel
+  ctx.fillStyle=skinD; ctx.fillRect(rfX,   rfY+2, 12,10);
+  ctx.fillStyle=skin;  ctx.fillRect(rfX-1, rfY+1, 12,10);
+  // Sole
+  ctx.fillStyle=skinD; ctx.fillRect(rfX-1, rfY+9, 26, 6);
+  ctx.fillStyle=skin;  ctx.fillRect(rfX-2, rfY+8, 26, 6);
+  ctx.fillStyle=skinS; ctx.fillRect(rfX-2, rfY+8,  8, 2);
+  // 4 toes
+  const rTW=[7,6,5,4];
+  for(let t=0;t<4;t++){
+    ctx.fillStyle=skinD; ctx.fillRect(rfX-2+t*6+1, rfY+1, rTW[t], 8);
+    ctx.fillStyle=skin;  ctx.fillRect(rfX-2+t*6,   rfY,   rTW[t], 8);
+    ctx.fillStyle='#ff4488'; ctx.fillRect(rfX-2+t*6, rfY, rTW[t], 2);
+  }
+
+  // ── Thong — slides down legs as licks increase ────────────
+  // Progress 0..1 over 69 licks; at 1 thong is at ankle
+  const prog=Math.min(licks/69,1.0);
+  // Thong travels from hip (legTopY+10) to ankle (legTopY+200)
+  const thongTravelLen=190;
+  let thongY = legTopY+10 + prog*thongTravelLen;
+  // If thong has fallen off, animate it dropping below feet
+  if(thongOff) thongY = legTopY+10+thongTravelLen + fallT*8;
+
+  if(!thongOff||fallT<30){
+    ctx.save();
+    if(thongOff) ctx.globalAlpha=Math.max(0,1-fallT/30);
+    const tw=76+Math.floor(prog*8); // waistband spans both legs, widens as it slips
+    const tx=legX-8;
+
+    // Scalloped lace waistband
+    const sc=10,sw2=tw/sc;
+    ctx.fillStyle=lace;
+    for(let i=0;i<sc;i++){
+      const sx2=tx+i*sw2;
+      ctx.fillRect(sx2,   thongY,    sw2-1,4);
+      ctx.fillRect(sx2+1, thongY-3,  sw2-3,3);
+      ctx.fillRect(sx2+2, thongY-5,  sw2-5,2);
+    }
+    ctx.fillStyle=pinkL;
+    for(let i=0;i<sc;i++) ctx.fillRect(tx+i*sw2+2,thongY-4,sw2-6,1);
+
+    // Waistband body
+    ctx.fillStyle=pink; ctx.fillRect(tx,thongY+4,tw,7);
+    ctx.fillStyle=pinkL; ctx.fillRect(tx,thongY+4,tw,2);
+    ctx.fillStyle=pinkD; ctx.fillRect(tx,thongY+10,tw,1);
+
+    // V panel — gets shorter as thong slides down (less leg to cover)
+    const panelH=Math.max(4,Math.round(22*(1-prog*0.7)));
+    const pvw=32,pvx=tx+22,pvy=thongY+11;
+    ctx.fillStyle=pink;
+    [[0,pvw],[1,pvw-3],[3,pvw-6],[5,pvw-10],[7,pvw-14],[9,6],[11,3]].forEach(([off,w],i)=>{
+      if(w<=0||i*4>panelH)return;
+      ctx.fillRect(pvx+off,pvy+i*4,w,3);
+    });
+    ctx.fillStyle=pinkD;
+    [[pvw/2-2,4],[pvw/2-2,3],[pvw/2-1,2]].forEach(([off,w],i)=>{
+      if(i*4>panelH)return;
+      ctx.fillRect(pvx+off,pvy+4+i*4,w,3);
+    });
+    // Lace dots
+    ctx.fillStyle='rgba(216,88,136,0.3)';
+    [[3,4],[10,3],[18,5],[5,12],[14,11]].forEach(([dx,dy])=>{
+      if(dy>panelH)return;
+      ctx.fillRect(pvx+dx,pvy+dy,3,3);
+    });
+    ctx.restore();
+  }
+
+  // Lickalotapus — left side, scaled up, licking toward the legs
+  const lcx=155,    lcy=239; // closer to legs
+  const lscale=2.1;
+  // Snappy tongue: track frames since last tap
+  const tf=lickGame.tongueFrame||0;
+  let lickTongueLen=0;
+  if(tf<4)       lickTongueLen=(tf/4)*60;        // blast out in 4 frames
+  else if(tf<8)  lickTongueLen=60;               // hold at full extension
+  else if(tf<12) lickTongueLen=60-((tf-8)/4)*60; // snap back in 4 frames
+  else           lickTongueLen=0;                // rest
+  const lickBlink=Math.floor(Date.now()/3000)%60<4?Math.floor(Date.now()/40)%4:0;
+  drawLickalotapus(lcx,lcy,lscale,1,lickTongueLen,lickBlink,frameCount);
+
+  // ── Lickmeter — large centred dial ───────────────────────
+  const pct=Math.min(licks/69,1);
+  const dmx=600,  dmy=215, dr=115;
+  ctx.save();
+  // Outer glow ring
+  ctx.beginPath();ctx.arc(dmx,dmy,dr+18,0,Math.PI*2);
+  const glowRing=ctx.createRadialGradient(dmx,dmy,dr,dmx,dmy,dr+18);
+  glowRing.addColorStop(0,'rgba(255,80,160,0.25)');
+  glowRing.addColorStop(1,'rgba(255,80,160,0)');
+  ctx.fillStyle=glowRing;ctx.fill();
+  // Outer bezel shadow
+  ctx.beginPath();ctx.arc(dmx,dmy,dr+10,0,Math.PI*2);
+  ctx.fillStyle='#0d0008';ctx.fill();
+  // Chrome bezel
+  const bezelGrad=ctx.createLinearGradient(dmx-dr,dmy-dr,dmx+dr,dmy+dr);
+  bezelGrad.addColorStop(0,'#8a3a7a');bezelGrad.addColorStop(0.35,'#dd88c0');
+  bezelGrad.addColorStop(0.5,'#f0aadd');bezelGrad.addColorStop(0.65,'#dd88c0');
+  bezelGrad.addColorStop(1,'#5a1a4a');
+  ctx.beginPath();ctx.arc(dmx,dmy,dr+8,0,Math.PI*2);
+  ctx.strokeStyle=bezelGrad;ctx.lineWidth=10;ctx.stroke();
+  // Inner bezel ring
+  ctx.beginPath();ctx.arc(dmx,dmy,dr+2,0,Math.PI*2);
+  ctx.strokeStyle='rgba(0,0,0,0.6)';ctx.lineWidth=3;ctx.stroke();
+  // Face
+  const faceGrad=ctx.createRadialGradient(dmx-30,dmy-30,8,dmx,dmy,dr);
+  faceGrad.addColorStop(0,'#2e0a25');faceGrad.addColorStop(0.6,'#180510');faceGrad.addColorStop(1,'#090005');
+  ctx.beginPath();ctx.arc(dmx,dmy,dr,0,Math.PI*2);
+  ctx.fillStyle=faceGrad;ctx.fill();
+  // Subtle face grid lines
+  ctx.strokeStyle='rgba(255,100,160,0.04)';ctx.lineWidth=1;
+  for(let gx=-dr;gx<=dr;gx+=20){ctx.beginPath();ctx.moveTo(dmx+gx,dmy-dr);ctx.lineTo(dmx+gx,dmy+dr);ctx.stroke();}
+  for(let gy=-dr;gy<=dr;gy+=20){ctx.beginPath();ctx.moveTo(dmx-dr,dmy+gy);ctx.lineTo(dmx+dr,dmy+gy);ctx.stroke();}
+  // Tick marks — 24 minor, 4 major zones
+  const startAng=-Math.PI*0.75, sweepAng=Math.PI*1.5;
+  for(let i=0;i<=24;i++){
+    const ang=startAng+sweepAng*(i/24);
+    const isMaj=i%6===0;
+    const isMed=i%3===0;
+    const r0=dr-(isMaj?26:isMed?18:10), r1=dr-4;
+    ctx.beginPath();
+    ctx.moveTo(dmx+Math.cos(ang)*r0,dmy+Math.sin(ang)*r0);
+    ctx.lineTo(dmx+Math.cos(ang)*r1,dmy+Math.sin(ang)*r1);
+    ctx.strokeStyle=isMaj?'rgba(255,200,230,1)':isMed?'rgba(255,160,200,0.7)':'rgba(255,120,170,0.3)';
+    ctx.lineWidth=isMaj?3:isMed?2:1;ctx.stroke();
+    if(isMaj){
+      const labels=['0','17','35','52','69'];
+      const li=i/6;
+      if(labels[li]){
+        const labelR=dr-38;
+        ctx.font='bold 12px "Press Start 2P"';
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillStyle='rgba(255,200,230,0.9)';
+        ctx.shadowColor='#ff88cc';ctx.shadowBlur=4;
+        ctx.fillText(labels[li],dmx+Math.cos(ang)*labelR,dmy+Math.sin(ang)*labelR);
+        ctx.shadowBlur=0;
+      }
+    }
+  }
+  // Coloured zone arcs on the track ring
+  const zoneData=[
+    {from:0,   to:0.5,  col:'rgba(255,80,120,0.15)'},
+    {from:0.5, to:0.85, col:'rgba(255,40,180,0.15)'},
+    {from:0.85,to:1.0,  col:'rgba(255,0,255,0.2)'},
+  ];
+  zoneData.forEach(z=>{
+    ctx.beginPath();
+    ctx.arc(dmx,dmy,dr-28,startAng+sweepAng*z.from,startAng+sweepAng*z.to);
+    ctx.strokeStyle=z.col;ctx.lineWidth=18;ctx.lineCap='butt';ctx.stroke();
+  });
+  // Arc track bg
+  ctx.beginPath();ctx.arc(dmx,dmy,dr-28,startAng,startAng+sweepAng);
+  ctx.strokeStyle='rgba(255,100,150,0.08)';ctx.lineWidth=18;ctx.lineCap='round';ctx.stroke();
+  // Arc fill
+  if(pct>0){
+    const arcCol=pct<0.5?'#ff5577':pct<0.85?'#ff11bb':'#ff00ff';
+    ctx.beginPath();ctx.arc(dmx,dmy,dr-28,startAng,startAng+sweepAng*pct);
+    ctx.strokeStyle=arcCol;ctx.lineWidth=18;ctx.lineCap='round';
+    ctx.shadowColor=arcCol;ctx.shadowBlur=20;ctx.stroke();
+    // Bright inner highlight on arc
+    ctx.beginPath();ctx.arc(dmx,dmy,dr-28,startAng,startAng+sweepAng*pct);
+    ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=4;ctx.shadowBlur=0;ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+  // Needle
+  const needleAng=startAng+sweepAng*pct;
+  const nLen=dr-16, nBack=20, nW=3;
+  // Needle shadow
+  ctx.beginPath();
+  ctx.moveTo(dmx+Math.cos(needleAng+Math.PI)*nBack+2,dmy+Math.sin(needleAng+Math.PI)*nBack+2);
+  ctx.lineTo(dmx+Math.cos(needleAng)*nLen+2,dmy+Math.sin(needleAng)*nLen+2);
+  ctx.strokeStyle='rgba(0,0,0,0.5)';ctx.lineWidth=nW+2;ctx.lineCap='round';ctx.stroke();
+  // Needle body
+  ctx.beginPath();
+  ctx.moveTo(dmx+Math.cos(needleAng+Math.PI)*nBack,dmy+Math.sin(needleAng+Math.PI)*nBack);
+  ctx.lineTo(dmx+Math.cos(needleAng)*nLen,dmy+Math.sin(needleAng)*nLen);
+  const needleGrad=ctx.createLinearGradient(
+    dmx+Math.cos(needleAng+Math.PI)*nBack,dmy+Math.sin(needleAng+Math.PI)*nBack,
+    dmx+Math.cos(needleAng)*nLen,dmy+Math.sin(needleAng)*nLen
+  );
+  needleGrad.addColorStop(0,'#882266');needleGrad.addColorStop(0.5,'#ffffff');needleGrad.addColorStop(1,'#ffaacc');
+  ctx.strokeStyle=needleGrad;ctx.lineWidth=nW;ctx.lineCap='round';
+  ctx.shadowColor='#ff88cc';ctx.shadowBlur=10;ctx.stroke();ctx.shadowBlur=0;
+  // Centre cap outer
+  ctx.beginPath();ctx.arc(dmx,dmy,16,0,Math.PI*2);
+  ctx.fillStyle='#330022';ctx.fill();
+  ctx.strokeStyle='#cc55aa';ctx.lineWidth=3;ctx.stroke();
+  // Centre cap inner
+  ctx.beginPath();ctx.arc(dmx,dmy,10,0,Math.PI*2);
+  const capGrad=ctx.createRadialGradient(dmx-3,dmy-3,1,dmx,dmy,10);
+  capGrad.addColorStop(0,'#ffccee');capGrad.addColorStop(1,'#cc44aa');
+  ctx.fillStyle=capGrad;ctx.fill();
+  // LICKMETER label
+  ctx.font='bold 13px "Press Start 2P"';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(255,190,220,0.7)';
+  ctx.shadowColor='#ff66aa';ctx.shadowBlur=6;
+  ctx.fillText('LICKMETER',dmx,dmy+dr-44);ctx.shadowBlur=0;
+  // Digital count readout
+  const rdW=90,rdH=34,rdX=dmx-rdW/2,rdY=dmy+42;
+  ctx.fillStyle='#0a0008';ctx.fillRect(rdX,rdY,rdW,rdH);
+  ctx.strokeStyle='rgba(255,100,160,0.5)';ctx.lineWidth=2;ctx.strokeRect(rdX,rdY,rdW,rdH);
+  // LCD scanline effect
+  for(let ry=rdY+2;ry<rdY+rdH-2;ry+=3){ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(rdX+2,ry,rdW-4,1);}
+  const countCol=pct<0.5?'#ff9aaa':pct<0.85?'#ff44cc':'#ff00ff';
+  ctx.font='bold 20px "Press Start 2P"';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle=countCol;ctx.shadowColor=countCol;ctx.shadowBlur=8;
+  ctx.fillText(licks,dmx,rdY+rdH/2);ctx.shadowBlur=0;
+  // "/69" sub-label
+  ctx.font='7px "Press Start 2P"';ctx.fillStyle='rgba(255,150,180,0.5)';
+  ctx.fillText('/ 69',dmx+28,rdY+rdH-8);
+  ctx.restore();
+  if(licks>=69) pxt('THONG LICKED OFF! 🩲💨',W/2,H/2-30,10,'#ffdd44','center','#ffaa00');
+
+  // Timer bar
+  const tRatio=lickGame.timeLeft/600;
+  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(10,22,W-20,8);
+  ctx.fillStyle=tRatio>.4?'#ff4466':tRatio>.2?'#ff8800':'#ff2222';
+  ctx.fillRect(11,23,Math.floor((W-22)*tRatio),6);
+  pxt(Math.ceil(lickGame.timeLeft/60)+'s',W-18,18,6,'rgba(255,255,255,0.6)','right');
+
+  pxt('LICK CHALLENGE!',W/2,6,8,'#ff6688','center','#ff4466');
+  if(Math.floor(Date.now()/400)%2===0&&licks<69)
+    pxt('CLICK TO LICK! 👅 TAP / SPACE / CLICK',W/2,H-18,10,'#ff9aaa','center');
+  if(lickGame.best>0) pxt('BEST: '+lickGame.best,W/2+100,14,6,'rgba(255,200,210,0.5)','center');
+
+  drawParticles();
+}
+
+function drawLickResult(){
+  ctx.fillStyle='#0a0005';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,0,80,0.05)';for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,2);
+
+  const thongBonus=lickGame.thongOff?500:0;
+  const bonus=lickGame.lastScore*20+thongBonus;
+  if(lickGame.thongOff){
+    pxt('THONG LICKED OFF! 🩲',W/2,42,11,'#ffdd44','center','#ffaa00');
+    pxt(lickGame.lastScore+' LICKS',W/2,80,14,'#ff9aaa','center','#ff6688');
+    pxt('+'+bonus+' BONUS PTS',W/2,110,9,T.accent,'center',T.accent);
+    pxt('+500 THONG BONUS!',W/2,132,8,'#ffdd44','center','#ffcc00');
+  } else {
+    pxt('TIME IS UP!',W/2,55,16,'#ff6688','center','#ff4466');
+    pxt(lickGame.lastScore+' LICKS',W/2,110,18,'#ff9aaa','center','#ff6688');
+    pxt('+'+bonus+' BONUS PTS',W/2,158,9,T.accent,'center',T.accent);
+  }
+  if(lickGame.lastScore===lickGame.best&&lickGame.best>0)
+    pxt('NEW RECORD! 🏆',W/2,186,8,'#ffdd44','center','#ffcc00');
+  pxt('NEXT LEVEL LOADING...',W/2,H-35,7,'rgba(200,200,200,0.5)','center');
+  drawParticles();
+}
+
+// ── LOOP ───────────────────────────────────────────────────
+
+// ── Shared cutscene guard portrait ──────────────────────────
+// gx,gy = face centre (unscaled coords), gs = scale, smirk = expression
+function drawCutsceneGuard(gx, gy, gs, smirk){
+  const skinMain = slimeMode ? '#aaff80' : '#c8a870';
+  const skinDark = slimeMode ? '#5a9a3a' : '#6a5a3a';
+  const skinMid  = slimeMode ? '#80cc50' : '#b89860';
+  const earInner = slimeMode ? 'rgba(40,160,40,0.5)' : 'rgba(180,100,80,0.4)';
+  const hatBrim  = slimeMode ? '#2a6a00' : '#223344';
+  const hatBody  = slimeMode ? '#3a8a00' : '#2a3d52';
+  const hatTop   = slimeMode ? '#1a5000' : '#1a2d40';
+  const collarD  = slimeMode ? '#0a1a0a' : '#334';
+  const collarL  = slimeMode ? '#162616' : '#445';
+  const neckCol  = slimeMode ? '#60aa40' : '#8a7a5a';
+  const browCol  = slimeMode ? '#2a6010' : '#8a6a3a';
+  const browLine = slimeMode ? '#163a08' : '#5a3a1a';
+  const mouthDark= slimeMode ? '#1a4a1a' : '#5a3a2a';
+  const mouthLine= slimeMode ? '#0a2a0a' : '#3a1a0a';
+
+  ctx.save();
+  ctx.translate(gx, gy); ctx.scale(gs, gs); ctx.translate(-gx, -gy);
+  const ox=gx, oy=gy;
+
+  // Neck
+  ctx.fillStyle=neckCol; ctx.fillRect(ox-14,oy+54,28,44);
+  // Shirt / collar
+  ctx.fillStyle=collarD; ctx.fillRect(ox-32,oy+82,64,34);
+  ctx.fillStyle=collarL; ctx.fillRect(ox-24,oy+80,48,7);
+  // Chest badge
+  ctx.fillStyle='#f0c030'; ctx.fillRect(ox-11,oy+92,22,16);
+  ctx.fillStyle='#c8a020'; ctx.fillRect(ox-9, oy+94,18,10);
+  ctx.fillStyle=slimeMode?'#7fff00':'#fff'; ctx.fillRect(ox-5,oy+96,10,6);
+
+  // Head shadow
+  ctx.fillStyle=skinDark; ctx.fillRect(ox-38+2,oy-74+2,76,76);
+  // Head
+  ctx.fillStyle=skinMain; ctx.fillRect(ox-38,oy-74,76,76);
+  ctx.fillStyle='rgba(255,240,200,0.18)'; ctx.fillRect(ox-32,oy-70,30,24);
+
+  // Ears
+  ctx.fillStyle=skinMid;
+  ctx.fillRect(ox-48,oy-46,10,22); ctx.fillRect(ox+38,oy-46,10,22);
+  ctx.fillStyle=earInner;
+  ctx.fillRect(ox-46,oy-42,6,14);  ctx.fillRect(ox+40,oy-42,6,14);
+
+  // Hat brim
+  ctx.fillStyle=hatBrim; ctx.fillRect(ox-44,oy-84,88,14);
+  // Cap body
+  ctx.fillStyle=hatBody; ctx.fillRect(ox-36,oy-128,72,46);
+  // Cap top shadow
+  ctx.fillStyle=hatTop;  ctx.fillRect(ox-36,oy-128,72,6);
+  // Hat strap band
+  ctx.fillStyle=hatBrim; ctx.fillRect(ox-36,oy-94,72,8);
+  // Hat badge
+  ctx.fillStyle='#f0c030'; ctx.fillRect(ox-11,oy-116,22,16);
+  ctx.fillStyle='#c8a020'; ctx.fillRect(ox-9, oy-114,18,10);
+  ctx.fillStyle='#fff';    ctx.fillRect(ox-6, oy-112,12,6);
+
+  // Brow ridge
+  ctx.fillStyle=browCol;
+  ctx.fillRect(ox-34,oy-44,30,8); ctx.fillRect(ox+4,oy-44,30,8);
+  // Brow crease lines
+  ctx.fillStyle=browLine;
+  if(smirk){
+    ctx.fillRect(ox-30,oy-46,22,3); ctx.fillRect(ox+10,oy-48,22,3);
+  } else {
+    ctx.fillRect(ox-30,oy-48,22,3); ctx.fillRect(ox+10,oy-48,22,3);
+    ctx.fillRect(ox-5, oy-52,10,7); // central crease — stern
+  }
+
+  // Eyes
+  ctx.fillStyle='#fff';
+  ctx.fillRect(ox-30,oy-36,22,14); ctx.fillRect(ox+8,oy-36,22,14);
+  // Pupils
+  ctx.fillStyle='#1a1a2a';
+  ctx.fillRect(ox-24,oy-34,10,10); ctx.fillRect(ox+14,oy-34,10,10);
+  // Eye shine
+  ctx.fillStyle='#fff';
+  ctx.fillRect(ox-24,oy-34,3,3); ctx.fillRect(ox+14,oy-34,3,3);
+  // Squint lids
+  ctx.fillStyle=skinMain;
+  ctx.fillRect(ox-30,oy-36,22,smirk?4:6); ctx.fillRect(ox+8,oy-36,22,smirk?4:6);
+
+  // Nose
+  ctx.fillStyle=skinMid; ctx.fillRect(ox-8,oy-22,16,18);
+  ctx.fillStyle=skinDark;
+  ctx.fillRect(ox-12,oy-10,10,8); ctx.fillRect(ox+2,oy-10,10,8);
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.fillRect(ox-10,oy-9,6,5); ctx.fillRect(ox+4,oy-9,6,5);
+
+  // Mouth
+  ctx.fillStyle=mouthDark; ctx.fillRect(ox-20,oy+8,40,6);
+  ctx.fillStyle=mouthLine; ctx.fillRect(ox-18,oy+10,36,3);
+  if(smirk){
+    ctx.fillStyle=skinMain; ctx.fillRect(ox+14,oy+8,8,5); // corner up
+    ctx.fillStyle='#f0f0f0'; ctx.fillRect(ox-10,oy+8,8,4); // teeth peek
+  } else {
+    ctx.fillStyle=skinMain; ctx.fillRect(ox-22,oy+8,4,4); // both corners neutral
+    ctx.fillRect(ox+18,oy+8,4,4);
+  }
+
+  // Jaw definition
+  ctx.fillStyle=skinDark;
+  ctx.fillRect(ox-34,oy+18,12,22); ctx.fillRect(ox+22,oy+18,12,22);
+  ctx.fillStyle=skinMid; ctx.fillRect(ox-12,oy+28,24,8); // chin
+
+  ctx.restore();
+}
+
+function drawConjugalCutscene(){
+  const t=conjugalCutsceneT;
+  let alpha=1;
+  if(t<50)       alpha=t/50;
+  else if(t>480) alpha=1-(t-480)/50;
+
+  // Background
+  ctx.fillStyle=slimeMode?'#020d02':'#000'; ctx.fillRect(0,0,W,H);
+  const bgGrd=ctx.createRadialGradient(W/2,H/2,40,W/2,H/2,340);
+  bgGrd.addColorStop(0,slimeMode?'rgba(20,100,20,0.3)':'rgba(80,40,10,0.3)');
+  bgGrd.addColorStop(1,'transparent');
+  ctx.fillStyle=bgGrd; ctx.fillRect(0,0,W,H);
+
+  ctx.save(); ctx.globalAlpha=alpha;
+
+  // ── Floating hearts / slime drops between chars ───────────
+  if(t>50 && t<500){
+    const hPhase=Math.min(1,(t-50)/15)*Math.min(1,(500-t)/15);
+    ctx.save(); ctx.globalAlpha*=hPhase;
+    for(let i=0;i<4;i++){
+      const ht=(t+i*55)%80;
+      const hx=370+Math.sin(ht*0.13)*18+(i-2)*14;
+      const hy=320-ht*3.2;
+      const hA=ht<20?ht/20:ht>60?1-(ht-60)/20:1;
+      ctx.save(); ctx.globalAlpha*=hA;
+      ctx.fillStyle=slimeMode?'#7fff00':'#ff4488';
+      ctx.fillRect(hx-4,hy-4,4,4); ctx.fillRect(hx,  hy-4,4,4);
+      ctx.fillRect(hx-6,hy,  12,4);
+      ctx.fillRect(hx-4,hy+4, 8,4);
+      ctx.fillRect(hx-2,hy+8, 4,4);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ── Lickalotapus — slide in then bounce with tongue out ───
+  const lickSlide=Math.min(1,t/35);
+  const lickX=Math.round(-80+lickSlide*290); // arrives at ~210
+  const bounce=lickSlide>=1?Math.abs(Math.sin(t*0.18))*(-9):0;
+  const lickY=300+Math.round(bounce);
+  const tongueOut=lickSlide>=1?18+Math.sin(t*0.15)*8:0;
+  drawLickalotapus(lickX,lickY,2.4,1,tongueOut,t,t*0.6);
+
+  // ── Guard face — right side, nods once ────────────────────
+  const nod=t>=40&&t<72?Math.sin((t-40)/32*Math.PI)*6:0;
+  drawCutsceneGuard(590,205+Math.round(nod),1.7,true);
+
+  // ── Speech bubble — pops in at t=50 ──────────────────────
+  const bubA=Math.min(1,Math.max(0,(t-50)/15));
+  if(bubA>0){
+    ctx.save(); ctx.globalAlpha*=bubA;
+    const bx=255,by=18,bw=260,bh=110;
+    const pop=bubA<1?0.85+bubA*0.15:1;
+    ctx.save();
+    ctx.translate(bx+bw/2,by+bh/2); ctx.scale(pop,pop); ctx.translate(-(bx+bw/2),-(by+bh/2));
+    ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(bx+4,by+4,bw,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f5f4ec'; ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx,by,bw,3);ctx.fillRect(bx,by+bh-3,bw,3);
+    ctx.fillRect(bx,by,3,bh);ctx.fillRect(bx+bw-3,by,3,bh);
+    // Tail on right side pointing toward guard (guard is at x=590, right of bubble centre)
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f5f4ec';
+    ctx.fillRect(bx+bw-4,by+bh-22,18,12);
+    ctx.fillRect(bx+bw+10,by+bh-14,12,7);
+    ctx.fillRect(bx+bw+18,by+bh-9,8,5);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx+bw+14,by+bh-22,3,12);
+    ctx.fillRect(bx+bw+19,by+bh-14,3,7);
+    ctx.fillRect(bx+bw+23,by+bh-9,3,5);
+    ctx.fillRect(bx+bw-4,by+bh-4,32,3);
+    ctx.font='bold 13px "Press Start 2P"';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#1a1a2a';
+    ctx.fillText("You've won a",bx+bw/2,by+26);
+    ctx.fillText('10 second conjugal.',bx+bw/2,by+54);
+    ctx.fillStyle=slimeMode?'#007700':'#cc0044';
+    ctx.shadowColor=slimeMode?'#00ff44':'#ff4488'; ctx.shadowBlur=6;
+    ctx.fillText(slimeMode?'Get Slurpin. 👅':'Get Lickin. 👅',bx+bw/2,by+84);
+    ctx.shadowBlur=0;
+    ctx.restore(); ctx.restore();
+  }
+
+  // ── Vignette ─────────────────────────────────────────────
+  const vig=ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,420);
+  vig.addColorStop(0,'transparent'); vig.addColorStop(1,'rgba(0,0,0,0.7)');
+  ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  const fadeAlpha=t<50?1-alpha:t>480?1-alpha:0;
+  if(fadeAlpha>0){ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;ctx.fillRect(0,0,W,H);}
+}
+
+function drawCutscene(){
+  const t=cutsceneT;
+  // Fade in 0-50, hold 50-700, fade out 700-750
+  let alpha=1;
+  if(t<50)       alpha=t/50;
+  else if(t>700) alpha=1-(t-700)/50;
+
+  // Background
+  ctx.fillStyle=slimeMode?'#020d02':'#000'; ctx.fillRect(0,0,W,H);
+  if(slimeMode){
+    const bgGrd=ctx.createRadialGradient(W/2,H/2,50,W/2,H/2,320);
+    bgGrd.addColorStop(0,'rgba(0,80,0,0.3)'); bgGrd.addColorStop(1,'transparent');
+    ctx.fillStyle=bgGrd; ctx.fillRect(0,0,W,H);
+  }
+
+  ctx.save(); ctx.globalAlpha=alpha;
+
+  // ── Lickalotapus — slides in from left (t=0-40), then trembles ──
+  const lickSlide=Math.min(1,t/40);
+  const lickX=Math.round(-60+lickSlide*270); // arrives at ~210
+  const tremble=lickSlide>=1?Math.sin(t*0.42)*1.5:0;
+  const lickY=290;
+  const lickTongue=lickSlide>=1?Math.max(0,Math.sin(t*0.08))*22:0;
+  drawLickalotapus(lickX+tremble,lickY,2.2,1,lickTongue,t,t*0.5);
+
+  // ── Saliva / drool ───────────────────────────────────────
+  if(lickSlide>=1){
+    const salivaCol   = slimeMode?'#b0ff70':'#a0eeff';
+    const salivaGlow  = slimeMode?'rgba(140,255,80,0.45)':'rgba(120,230,255,0.45)';
+    const salivaLight = slimeMode?'rgba(200,255,160,0.7)':'rgba(200,245,255,0.7)';
+    const droolOriX = Math.round(lickX+69); // snout tip X
+    const droolOriY = Math.round(lickY-41); // mouth bottom Y
+    const flrY      = Math.round(lickY+98); // floor / toe level
+    const dropRange = flrY - droolOriY;
+
+    ctx.save();
+    // ── Small puddle (grows from t=40, max ~28px) ─────────
+    const pudW = Math.min(28, (t-40)*0.12);
+    const pudH = pudW*0.28;
+    if(pudW>0){
+      ctx.fillStyle = slimeMode?'rgba(140,255,80,0.35)':'rgba(120,220,255,0.35)';
+      ctx.beginPath(); ctx.ellipse(droolOriX, flrY+8, pudW, pudH, 0, 0, Math.PI*2); ctx.fill();
+    }
+
+    // ── 2 drool strands ───────────────────────────────────
+    const strandDefs=[
+      {ox:-5, delay:0,  maxFrac:0.7, thickBase:2.5},
+      {ox: 5, delay:10, maxFrac:0.6, thickBase:2.0},
+    ];
+    strandDefs.forEach((sd,i)=>{
+      const phase = t*0.038 + i*1.3;
+      const grow  = Math.min(1, Math.max(0,(t-40-sd.delay)*0.014));
+      const len   = grow * sd.maxFrac * dropRange;
+      if(len<=0) return;
+      const ox  = droolOriX + sd.ox;
+      const wob = Math.sin(phase)*2;
+      const ex  = ox + wob;
+      const ey  = droolOriY + len;
+      ctx.strokeStyle=salivaGlow; ctx.lineWidth=sd.thickBase*2; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(ox,droolOriY); ctx.lineTo(ex,ey); ctx.stroke();
+      ctx.strokeStyle=salivaCol; ctx.lineWidth=sd.thickBase;
+      ctx.beginPath(); ctx.moveTo(ox,droolOriY); ctx.lineTo(ex,ey); ctx.stroke();
+      const beadR = sd.thickBase*0.9 + grow*1.5;
+      ctx.fillStyle=salivaCol; ctx.beginPath(); ctx.arc(ex,ey,beadR,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=salivaLight; ctx.beginPath(); ctx.arc(ex-beadR*0.3,ey-beadR*0.3,beadR*0.4,0,Math.PI*2); ctx.fill();
+    });
+
+    // ── 2 drip drops ──────────────────────────────────────
+    for(let di=0;di<2;di++){
+      const dropT = (t*0.5 + di*35) % 65;
+      if(dropT<55){
+        const dox = droolOriX + (di===0?-4:4);
+        const doy = droolOriY + (dropT/55)*dropRange;
+        ctx.fillStyle=salivaCol; ctx.beginPath(); ctx.arc(dox,doy,2,0,Math.PI*2); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Sweat drop (nervous) after arrival
+  if(lickSlide>=1){
+    const sdrop=(t%36)/36; // 0→1 loop
+    const sy=lickY-95+sdrop*22;
+    const sAlpha=sdrop<0.5?sdrop*2:2-sdrop*2;
+    ctx.save(); ctx.globalAlpha*=sAlpha*0.8;
+    ctx.fillStyle=slimeMode?'#7fff00':'#88ccff';
+    ctx.fillRect(lickX+32,sy,5,8); ctx.fillRect(lickX+33,sy+8,3,3);
+    ctx.restore();
+  }
+
+  // ── Guard face — right side, bobs once ──────────────────
+  const guardBob=t>=35&&t<66?Math.sin((t-35)/31*Math.PI)*(-5):0;
+  drawCutsceneGuard(590,200+Math.round(guardBob),1.8,false);
+
+  // ── Speech bubble — pops in at t=45 ─────────────────────
+  const bubA=Math.min(1,Math.max(0,(t-45)/15));
+  if(bubA>0){
+    ctx.save(); ctx.globalAlpha*=bubA;
+    const bx=258,by=28,bw=240,bh=68;
+    const pop=bubA<1?0.85+bubA*0.15:1;
+    ctx.save();
+    ctx.translate(bx+bw/2,by+bh/2); ctx.scale(pop,pop); ctx.translate(-(bx+bw/2),-(by+bh/2));
+    ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(bx+4,by+4,bw,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8'; ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx,by,bw,3);ctx.fillRect(bx,by+bh-3,bw,3);
+    ctx.fillRect(bx,by,3,bh);ctx.fillRect(bx+bw-3,by,3,bh);
+    ctx.fillStyle=slimeMode?'#e8ffe8':'#f0efe8';
+    ctx.fillRect(bx+bw-4,by+bh-18,18,10);
+    ctx.fillRect(bx+bw+10,by+bh-12,12,6);
+    ctx.fillRect(bx+bw+18,by+bh-8,8,4);
+    ctx.fillStyle='#222';
+    ctx.fillRect(bx+bw+14,by+bh-18,3,10);
+    ctx.fillRect(bx+bw+19,by+bh-12,3,6);
+    ctx.fillRect(bx+bw+23,by+bh-8,3,4);
+    ctx.fillRect(bx+bw-4,by+bh-4,32,3);
+    ctx.font='bold 13px "Press Start 2P"';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#1a1a2a';
+    ctx.fillText('Do you even',bx+bw/2,by+bh/2-12);
+    ctx.fillText(slimeMode?'slurp bro? 👅':'lick bro? 👅',bx+bw/2,by+bh/2+14);
+    ctx.restore(); ctx.restore();
+  }
+
+  // ── Vignette ─────────────────────────────────────────────
+  const vig=ctx.createRadialGradient(W/2,H/2,80,W/2,H/2,420);
+  vig.addColorStop(0,'transparent'); vig.addColorStop(1,'rgba(0,0,0,0.75)');
+  ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  const fadeAlpha=t<50?1-alpha:t>700?1-alpha:0;
+  if(fadeAlpha>0){ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;ctx.fillRect(0,0,W,H);}
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  if(state==='title'){drawTitle();return;}
+  if(state==='cutscene'){drawCutscene();return;}
+  if(state==='bust_cutscene'){drawBustCutscene();return;}
+  if(state==='win_cutscene'){drawWinCutscene();return;}
+  if(state==='warden_cutscene'){drawWardenCutscene();return;}
+  if(state==='dead'){drawDead();return;}
+  if(state==='respawn'){drawRespawnCountdown();return;}
+  if(state==='win'){drawWin();return;}
+  if(state==='conjugal_cutscene'){drawConjugalCutscene();return;}
+  if(state==='lickgame'){drawLickGame();return;}
+  if(state==='lickresult'){drawLickResult();return;}
+  drawGame();
+}
+
+// ── MAIN LOOP ──────────────────────────────────────────────
+function loop(){
+  frameCount++;
+  if(window.applyMobileControls)window.applyMobileControls();
+  if(state==='cutscene'){
+    cutsceneT++;
+    if(cutsceneT===45)SFX.slurp();
+    if(cutsceneT>=cutsceneDur){startLevel();}
+  } else if(state==='bust_cutscene'){
+    bustCutsceneT++;
+    if(bustCutsceneT>=bustCutsceneDur){
+      if(bustIsGameOver){state='dead';setTimeout(()=>{if(state==='dead')startTitleMusic();},800);}
+      else{state='respawn';respawnT=0;}
+    }
+  } else if(state==='win_cutscene'){
+    winCutsceneT++;
+    if(winCutsceneT===1)startWinMusic();
+    if(winCutsceneT>=winCutsceneDur){stopWinMusic();level=1;lives=3;score=0;state='title';startTitleMusic();}
+  } else if(state==='warden_cutscene'){
+    wardenCutsceneT++;
+    if(wardenCutsceneT>=wardenCutsceneDur){state='lickgame';}
+  } else {
+    update();
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+
+// Start title music immediately; browsers may suspend AudioContext until a
+// gesture, so we also attach a one-time unlock listener as a fallback.
+initAudio();
+startTitleMusic();
+if(audioCtx&&audioCtx.state==='suspended'){
+  const _unlock=()=>{
+    audioCtx.resume().then(()=>{if(!titleMusicPlaying)startTitleMusic();});
+    document.removeEventListener('pointerdown',_unlock);
+    document.removeEventListener('keydown',_unlock);
+  };
+  document.addEventListener('pointerdown',_unlock,{once:true});
+  document.addEventListener('keydown',_unlock,{once:true});
+}
+</script>
+</body>
+</html>
