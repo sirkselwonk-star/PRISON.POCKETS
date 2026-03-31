@@ -4453,7 +4453,7 @@ var _lastLoopTime=0;
 var _accumulator=0;
 var _TICK_MS=1000/60; // target 60fps tick rate
 var _isMobile=window.matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>0;
-var _ticksPerFrame=_isMobile?3:1; // mobile runs ~20-30fps, so triple-tick
+var _ticksPerFrame=_isMobile?2.5:1; // mobile speed boost
 
 function tick(){
   frameCount++;
@@ -4484,8 +4484,9 @@ function loop(now){
   if(!_lastLoopTime)_lastLoopTime=now;
   var elapsed=now-_lastLoopTime;
   _lastLoopTime=now;
-  // On mobile, always run at least _ticksPerFrame ticks to compensate for lower fps
-  for(var i=0;i<_ticksPerFrame;i++)tick();
+  // On mobile, run extra ticks to compensate for lower fps
+  _accumulator+=_ticksPerFrame;
+  while(_accumulator>=1){tick();_accumulator-=1;}
   draw();
   requestAnimationFrame(loop);
 }
