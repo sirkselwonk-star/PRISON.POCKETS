@@ -4405,7 +4405,11 @@ function draw(){
 }
 
 // ── MAIN LOOP ──────────────────────────────────────────────
-function loop(){
+var _lastLoopTime=0;
+var _accumulator=0;
+var _TICK_MS=1000/60; // target 60fps tick rate
+
+function tick(){
   frameCount++;
   if(window.applyMobileControls)window.applyMobileControls();
   if(state==='cutscene'){
@@ -4428,10 +4432,24 @@ function loop(){
   } else {
     update();
   }
+}
+
+function loop(now){
+  if(!_lastLoopTime)_lastLoopTime=now;
+  var elapsed=now-_lastLoopTime;
+  _lastLoopTime=now;
+  // Cap to avoid spiral of death (e.g. tab was backgrounded)
+  if(elapsed>100)elapsed=100;
+  _accumulator+=elapsed;
+  // Run enough ticks to catch up to 60fps
+  while(_accumulator>=_TICK_MS){
+    tick();
+    _accumulator-=_TICK_MS;
+  }
   draw();
   requestAnimationFrame(loop);
 }
-loop();
+requestAnimationFrame(loop);
 
 // Start title music immediately; browsers may suspend AudioContext until a
 // gesture, so we also attach a one-time unlock listener as a fallback.
