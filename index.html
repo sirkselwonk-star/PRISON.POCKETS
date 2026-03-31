@@ -4452,6 +4452,8 @@ function draw(){
 var _lastLoopTime=0;
 var _accumulator=0;
 var _TICK_MS=1000/60; // target 60fps tick rate
+var _isMobile=window.matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>0;
+var _ticksPerFrame=_isMobile?2:1; // mobile runs ~30fps, so double-tick
 
 function tick(){
   frameCount++;
@@ -4482,18 +4484,8 @@ function loop(now){
   if(!_lastLoopTime)_lastLoopTime=now;
   var elapsed=now-_lastLoopTime;
   _lastLoopTime=now;
-  // Cap to avoid spiral of death (e.g. tab was backgrounded)
-  if(elapsed>200)elapsed=200;
-  _accumulator+=elapsed;
-  // Run enough ticks to catch up to 60fps (max 8 per frame)
-  var ticks=0;
-  while(_accumulator>=_TICK_MS&&ticks<8){
-    tick();
-    _accumulator-=_TICK_MS;
-    ticks++;
-  }
-  // If still behind, drop leftover to prevent permanent lag
-  if(_accumulator>_TICK_MS*2)_accumulator=0;
+  // On mobile, always run at least _ticksPerFrame ticks to compensate for lower fps
+  for(var i=0;i<_ticksPerFrame;i++)tick();
   draw();
   requestAnimationFrame(loop);
 }
