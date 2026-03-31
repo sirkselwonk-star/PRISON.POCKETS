@@ -18,7 +18,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
 /* HUD overlays top of canvas */
 #hud{position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px 6px;pointer-events:none;font-size:14px;color:var(--accent);text-shadow:0 0 8px var(--accent),1px 1px #000;background:linear-gradient(to bottom,rgba(0,0,0,.85) 0%,transparent 100%)}
 /* Theme button — floating top-right corner over canvas */
-#hudButtons{position:absolute;top:32px;right:8px;z-index:100;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+#hudButtons{position:absolute;top:32px;right:8px;z-index:100;display:none;flex-direction:column;gap:4px;align-items:flex-end}
+#hudButtons.visible{display:flex}
 .hudBtn{font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);padding:4px 7px;cursor:pointer;transition:all .15s;backdrop-filter:blur(4px);border-radius:2px}
 #themeBtn{color:#7fff00;border:1px solid #7fff0066;text-shadow:0 0 6px #7fff00}
 #themeBtn:hover{background:#7fff00;color:#000;text-shadow:none;border-color:#7fff00}
@@ -407,8 +408,13 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
     const h=document.getElementById('kbHint');if(h)h.style.display='none';
     fitCanvas();applyAll();
   }
-  if(isTouchDevice())showControls();
-  else{document.getElementById('kbHint').style.display='block';window.addEventListener('touchstart',showControls,{once:true});}
+  // Delay showing controls until after Click to Start overlay is dismissed
+  function showControlsAfterStart(){
+    if(document.getElementById('clickToStart'))return requestAnimationFrame(showControlsAfterStart);
+    if(isTouchDevice())showControls();
+    else{document.getElementById('kbHint').style.display='block';window.addEventListener('touchstart',showControls,{once:true});}
+  }
+  showControlsAfterStart();
 })();
 
 // ── CLICK TO START OVERLAY ─────────────────────────────────
@@ -446,7 +452,7 @@ function resumeAudio(){
   if(audioCtx.state==='suspended')audioCtx.resume();
   if((state==='title'||state==='dead')&&!titleMusicPlaying&&!soundMuted)startTitleMusic();
   var cts=document.getElementById('clickToStart');
-  if(cts)cts.remove();
+  if(cts){cts.remove();document.getElementById('hudButtons').classList.add('visible');}
 }
 
 // Play a tone with given params: freq, duration(s), type, gainNode, volume, slide(end freq)
