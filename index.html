@@ -29,14 +29,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
 /* Mobile controls — floating overlay at bottom of screen */
 #stickBar{position:fixed;bottom:0;left:0;right:0;z-index:100;display:none;justify-content:space-between;align-items:center;padding:8px 0 44px;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.4) 70%,transparent 100%);height:150px;gap:0;pointer-events:none;box-sizing:border-box}
 #stickBar.visible{display:flex}
-#stickLeft{touch-action:none;user-select:none;-webkit-user-select:none;display:none;flex-shrink:0;pointer-events:all;margin-left:6px}
-#dpadWrap{position:relative;width:130px;height:130px;flex-shrink:0;pointer-events:all;margin-left:6px}
-.dpad-btn{position:absolute;width:42px;height:42px;border-radius:10px;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;font-size:14px;color:rgba(255,255,255,.5);touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;transition:all .08s}
-.dpad-btn.pressed{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.7);color:#fff;box-shadow:0 0 10px rgba(255,255,255,.3)}
-#dpad-up{top:0;left:50%;transform:translateX(-50%)}
-#dpad-down{bottom:0;left:50%;transform:translateX(-50%)}
-#dpad-left{left:0;top:50%;transform:translateY(-50%)}
-#dpad-right{right:0;top:50%;transform:translateY(-50%)}
+#stickLeft{touch-action:none;user-select:none;-webkit-user-select:none;display:block;flex-shrink:0;pointer-events:all;margin-left:6px}
 #rightButtons{display:flex;flex-direction:column;gap:8px;align-items:center;flex-shrink:0;pointer-events:all;margin-right:6px}
 .actionBtn{width:88px;height:52px;border-radius:14px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;font-size:8px;color:rgba(255,255,255,.45);touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;transition:all .08s;letter-spacing:1px}
 .actionBtn.pressed{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.7);color:#fff;box-shadow:0 0 12px rgba(255,255,255,.3)}
@@ -58,12 +51,6 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
 </div>
 <div id="stickBar">
   <canvas id="stickLeft" width="110" height="110"></canvas>
-  <div id="dpadWrap">
-    <div class="dpad-btn" id="dpad-up">&#9650;</div>
-    <div class="dpad-btn" id="dpad-down">&#9660;</div>
-    <div class="dpad-btn" id="dpad-left">&#9664;</div>
-    <div class="dpad-btn" id="dpad-right">&#9654;</div>
-  </div>
   <div id="rightButtons">
     <div class="actionBtn" id="btnJump">▲ JUMP</div>
     <div class="actionBtn" id="btnLick" style="border-color:rgba(255,100,120,0.4);color:rgba(255,150,160,0.6)">👅 LICK</div>
@@ -333,20 +320,6 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
   function lickBtnEnd(e){e.preventDefault();for(const t of e.changedTouches)if(t.identifier===window.lickBtn.tid){window.lickBtn.held=false;window.lickBtn.tid=null;btnLick.classList.remove('pressed');}}
   btnLick.addEventListener('touchend',lickBtnEnd,{passive:false});
   btnLick.addEventListener('touchcancel',lickBtnEnd,{passive:false});
-
-  // D-pad controls
-  const dpadMap={up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight'};
-  ['up','down','left','right'].forEach(dir=>{
-    const btn=document.getElementById('dpad-'+dir);
-    const key=dpadMap[dir];
-    btn.addEventListener('touchstart',e=>{
-      e.preventDefault();resumeAudio();
-      keys[key]=true;btn.classList.add('pressed');
-      if(dir==='up')advance();
-    },{passive:false});
-    btn.addEventListener('touchend',e=>{e.preventDefault();keys[key]=false;btn.classList.remove('pressed');},{passive:false});
-    btn.addEventListener('touchcancel',e=>{e.preventDefault();keys[key]=false;btn.classList.remove('pressed');},{passive:false});
-  });
 
   window.applyMobileControls=applyAll;
   function showControls(){
