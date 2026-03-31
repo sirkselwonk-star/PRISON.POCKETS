@@ -270,8 +270,8 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
     drawStick();
     keys['ArrowLeft']=stick.active&&stick.dx<-DEAD;
     keys['ArrowRight']=stick.active&&stick.dx>DEAD;
-    keys['ArrowDown']=window.duckBtn.held;
-    keys['ArrowUp']=window.jumpBtn.held;
+    keys['ArrowDown']=window.duckBtn.held||(stick.active&&stick.dy>DEAD);
+    keys['ArrowUp']=window.jumpBtn.held||(stick.active&&stick.dy<-DEAD);
   }
   function stickXY(t){
     const r=lc.getBoundingClientRect();
