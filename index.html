@@ -40,6 +40,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
 .rocker-half.pressed{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.7);color:#fff;box-shadow:0 0 10px rgba(255,255,255,.3)}
 #rocker-left{border-radius:14px 0 0 14px;border-right:1px solid rgba(255,255,255,.15)}
 #rocker-right{border-radius:0 14px 14px 0;border-left:1px solid rgba(255,255,255,.15)}
+#clickToStart{position:absolute;top:0;left:0;right:0;bottom:0;z-index:200;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:'Press Start 2P',monospace;font-size:18px;color:#fff;text-shadow:0 0 12px #FF6B1A,0 0 24px #FF6B1A;letter-spacing:3px;text-transform:uppercase}
 #rightButtons{display:flex;flex-direction:column;gap:8px;align-items:center;flex-shrink:0;pointer-events:all;margin-right:6px}
 .actionBtn{width:88px;height:52px;border-radius:14px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;font-size:8px;color:rgba(255,255,255,.45);touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;transition:all .08s;letter-spacing:1px}
 .actionBtn.pressed{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.7);color:#fff;box-shadow:0 0 12px rgba(255,255,255,.3)}
@@ -55,6 +56,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
     <span id="hCoins" style="color:#ffd700;text-shadow:0 0 6px #ffd700,1px 1px #000"></span>
     <span id="hScore"></span>
   </div>
+  <div id="clickToStart">👅 CLICK TO START 👅</div>
   <div id="hudButtons">
     <button class="hudBtn" id="themeBtn">🟢 SLIME MODE</button>
     <button class="hudBtn" id="muteBtn">🔊 SOUND</button>
@@ -409,6 +411,10 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
   else{document.getElementById('kbHint').style.display='block';window.addEventListener('touchstart',showControls,{once:true});}
 })();
 
+// ── CLICK TO START OVERLAY ─────────────────────────────────
+document.getElementById('clickToStart').addEventListener('click',()=>resumeAudio());
+document.getElementById('clickToStart').addEventListener('touchstart',e=>{e.preventDefault();resumeAudio();});
+
 // ── THEME TOGGLE ───────────────────────────────────────────
 document.getElementById('themeBtn').addEventListener('click',()=>{
   slimeMode=!slimeMode;T=slimeMode?THEMES.slime:THEMES.prison;
@@ -439,6 +445,8 @@ function resumeAudio(){
   if(!audioCtx)initAudio();
   if(audioCtx.state==='suspended')audioCtx.resume();
   if((state==='title'||state==='dead')&&!titleMusicPlaying&&!soundMuted)startTitleMusic();
+  var cts=document.getElementById('clickToStart');
+  if(cts)cts.remove();
 }
 
 // Play a tone with given params: freq, duration(s), type, gainNode, volume, slide(end freq)
