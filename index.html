@@ -322,19 +322,25 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
     btn.addEventListener('touchend',end,{passive:false});btn.addEventListener('touchcancel',end,{passive:false});
   }
   mkBtn(btnJump,window.jumpBtn);mkBtn(btnDuck,window.duckBtn);
-  // Lick button — fires tongue or taps in minigame
+  // Lick button — fires tongue or taps in minigame, auto-repeats while held
   const btnLick=document.getElementById('btnLick');
   window.lickBtn={held:false,tid:null};
+  var lickRepeatTimer=null;
+  function doLick(){
+    if(state==='playing'&&tongue.phase==='idle'&&tongue.cd<=0)fireTongue();
+    if(state==='lickgame')lickTap();
+  }
   btnLick.addEventListener('touchstart',e=>{
     e.preventDefault();
     for(const t of e.changedTouches)if(!window.lickBtn.held){
       window.lickBtn.held=true;window.lickBtn.tid=t.identifier;
       btnLick.classList.add('pressed');
-      if(state==='playing'&&tongue.phase==='idle'&&tongue.cd<=0)fireTongue();
-      if(state==='lickgame')lickTap();
+      doLick();
+      if(lickRepeatTimer)clearInterval(lickRepeatTimer);
+      lickRepeatTimer=setInterval(doLick,150);
     }
   },{passive:false});
-  function lickBtnEnd(e){e.preventDefault();for(const t of e.changedTouches)if(t.identifier===window.lickBtn.tid){window.lickBtn.held=false;window.lickBtn.tid=null;btnLick.classList.remove('pressed');}}
+  function lickBtnEnd(e){e.preventDefault();for(const t of e.changedTouches)if(t.identifier===window.lickBtn.tid){window.lickBtn.held=false;window.lickBtn.tid=null;btnLick.classList.remove('pressed');if(lickRepeatTimer){clearInterval(lickRepeatTimer);lickRepeatTimer=null;}}}
   btnLick.addEventListener('touchend',lickBtnEnd,{passive:false});
   btnLick.addEventListener('touchcancel',lickBtnEnd,{passive:false});
 
