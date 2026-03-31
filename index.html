@@ -4453,7 +4453,7 @@ var _lastLoopTime=0;
 var _accumulator=0;
 var _TICK_MS=1000/60; // target 60fps tick rate
 var _isMobile=window.matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>0;
-var _ticksPerFrame=_isMobile?2:1; // mobile runs ~30fps, so double-tick
+var _ticksPerFrame=_isMobile?3:1; // mobile runs ~20-30fps, so triple-tick
 
 function tick(){
   frameCount++;
