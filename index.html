@@ -18,11 +18,13 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
 /* HUD overlays top of canvas */
 #hud{position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px 6px;pointer-events:none;font-size:14px;color:var(--accent);text-shadow:0 0 8px var(--accent),1px 1px #000;background:linear-gradient(to bottom,rgba(0,0,0,.85) 0%,transparent 100%)}
 /* Theme button — floating top-right corner over canvas */
-#themeBtn{position:fixed;top:6px;right:8px;z-index:100;font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);color:#7fff00;border:1px solid #7fff0066;padding:4px 7px;cursor:pointer;transition:all .15s;text-shadow:0 0 6px #7fff00;backdrop-filter:blur(4px)}
+#hudButtons{position:absolute;top:32px;right:8px;z-index:100;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.hudBtn{font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);padding:4px 7px;cursor:pointer;transition:all .15s;backdrop-filter:blur(4px);border-radius:2px}
+#themeBtn{color:#7fff00;border:1px solid #7fff0066;text-shadow:0 0 6px #7fff00}
 #themeBtn:hover{background:#7fff00;color:#000;text-shadow:none;border-color:#7fff00}
-#muteBtn{position:fixed;top:6px;right:120px;z-index:100;font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);color:#ffaa00;border:1px solid #ffaa0066;padding:4px 7px;cursor:pointer;transition:all .15s;text-shadow:0 0 6px #ffaa00;backdrop-filter:blur(4px)}
+#muteBtn{color:#ffaa00;border:1px solid #ffaa0066;text-shadow:0 0 6px #ffaa00}
 #muteBtn:hover{background:#ffaa00;color:#000;text-shadow:none;border-color:#ffaa00}
-#godBtn{position:fixed;top:6px;right:230px;z-index:100;font-family:'Press Start 2P',monospace;font-size:6px;background:rgba(0,0,0,.75);color:#aaaaaa;border:1px solid #aaaaaa44;padding:4px 7px;cursor:pointer;transition:all .15s;text-shadow:none;backdrop-filter:blur(4px)}
+#godBtn{color:#aaaaaa;border:1px solid #aaaaaa44;text-shadow:none}
 #godBtn.active{color:#ff44ff;border-color:#ff44ff99;text-shadow:0 0 8px #ff44ff;background:rgba(80,0,80,.75)}
 /* Keyboard hint — floating top-left */
 #kbHint{position:fixed;top:8px;left:8px;z-index:100;font-size:5px;color:#333;display:none;pointer-events:none}
@@ -45,9 +47,6 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
 </head>
 <body>
 <span id="kbHint">← → MOVE · ↑ JUMP · ↓ DUCK · Z LICK · HIDE IN BARRELS</span>
-<button id="themeBtn">🟢 SLIME MODE</button>
-<button id="muteBtn">🔊 SOUND</button>
-<button id="godBtn">👁️ GOD</button>
 <div id="canvasWrap">
   <canvas id="canvas"></canvas>
   <div id="hud">
@@ -55,6 +54,11 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Pr
     <span id="hItem" style="text-align:center"></span>
     <span id="hCoins" style="color:#ffd700;text-shadow:0 0 6px #ffd700,1px 1px #000"></span>
     <span id="hScore"></span>
+  </div>
+  <div id="hudButtons">
+    <button class="hudBtn" id="themeBtn">🟢 SLIME MODE</button>
+    <button class="hudBtn" id="muteBtn">🔊 SOUND</button>
+    <button class="hudBtn" id="godBtn">👁️ GOD</button>
   </div>
 </div>
 <div id="stickBar">
